@@ -17,16 +17,16 @@ class BandcampJSON:
 
     def get_pagedata(self):
         self.logger.debug(" Grab pagedata JSON..")
-        pagedata = self.body.find('div', {'id': 'pagedata'})['data-blob']
+        pagedata = self.body.find("div", {"id": "pagedata"})["data-blob"]
         self.json_data.append(pagedata)
 
     def get_js(self):
         """Get <script> element containing the data we need and return the raw JS"""
         self.logger.debug(" Grabbing embedded scripts..")
         embedded_scripts_raw = [self.body.find("script", {"type": "application/ld+json"}).string]
-        for script in self.body.find_all('script'):
+        for script in self.body.find_all("script"):
             try:
-                album_info = script['data-tralbum']
+                album_info = script["data-tralbum"]
                 embedded_scripts_raw.append(album_info)
             except Exception:
                 continue
