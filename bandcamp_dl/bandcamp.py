@@ -1,16 +1,20 @@
-import sys
+from __future__ import annotations
+
 import datetime
 import json
 import logging
+import sys
+from typing import Any
+from urllib.parse import urljoin
 
 import bs4
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util import create_urllib3_context
-from urllib.parse import urlparse, urlunparse, urljoin
 
-from bandcamp_dl import __version__
 from bandcamp_dl.bandcampjson import BandcampJSON
+from bandcamp_dl.config import Album, Track
+from bandcamp_dl.const import VERSION
 
 
 class SSLAdapter(HTTPAdapter):
@@ -55,9 +59,7 @@ ctx.set_ciphers(DEFAULT_CIPHERS)
 
 class Bandcamp:
     def __init__(self):
-        self.headers = {"User-Agent": f"bandcamp-dl/{__version__} (https://github.com/evolution0/bandcamp-dl)"}
-        self.soup = None
-        self.tracks = None
+        self.headers = {"User-Agent": f"bandcamp-dl/{VERSION} (https://github.com/evolution0/bandcamp-dl)"}
         self.logger = logging.getLogger("bandcamp-dl").getChild("Main")
 
         # Mount the adapter with the custom SSL context to the session
@@ -68,19 +70,18 @@ class Bandcamp:
     def parse(
         self,
         url: str,
-        art: bool = True,
-        lyrics: bool = False,
-        genres: bool = False,
-        debugging: bool = False,
+        add_art: bool = True,
+        add_lyrics: bool = False,
+        add_genres: bool = False,
         cover_quality: int = 0,
-    ) -> dict or None:
+    ) -> Album | None:
         """Requests the page, cherry-picks album info
 
         :param url: album/track url
-        :param art: if True download album art
-        :param lyrics: if True fetch track lyrics
-        :param genres: if True fetch track tags
-        :param debugging: if True then verbose output
+        :param add_art: if True download album art
+        :param add_lyrics: if True fetch track lyrics
+        :param add_genres: if True fetch track tags
+        :param cover_quality: The quality of the album art to retrieve
         :return: album metadata
         """
 
@@ -95,70 +96,73 @@ class Bandcamp:
             sys.exit(2)
 
         try:
-            self.soup = bs4.BeautifulSoup(response.text, "lxml")
+            soup = bs4.BeautifulSoup(response.text, "lxml")
         except bs4.FeatureNotFound:
-            self.soup = bs4.BeautifulSoup(response.text, "html.parser")
+            soup = bs4.BeautifulSoup(response.text, "html.parser")
 
         self.logger.debug(" Generating BandcampJSON..")
-        bandcamp_json = BandcampJSON(self.soup, debugging).generate()
-        page_json = {}
+        bandcamp_json = BandcampJSON(soup).generate()
+        page_json: dict[str, Any] = {}
         for entry in bandcamp_json:
             page_json = {**page_json, **json.loads(entry)}
         self.logger.debug(" BandcampJSON generated..")
 
         self.logger.debug(" Generating Album..")
-        self.tracks = page_json["trackinfo"]
+        tracks_raw: list[dict[str, Any]] = page_json["trackinfo"]
+        tracks = [self.parse_track(t) for t in tracks_raw]
 
-        track_ids = {}
+        if "/track/" in page_json["url"]:
+            artist_url = page_json["url"].rpartition("/track/")[0]
+        else:
+            artist_url = page_json["url"].rpartition("/album/")[0]
+
+        for t in tracks:
+            t.artist_url = artist_url
+
+        track_ids: dict[str, int] = {}
         if "track" in page_json and "itemListElement" in page_json["track"]:
             for item in page_json["track"]["itemListElement"]:
-                track_url = item["item"]["@id"]
+                track_url: str = item["item"]["@id"]
                 for prop in item["item"].get("additionalProperty", []):
                     if prop.get("name") == "track_id":
                         track_ids[track_url] = prop.get("value")
                         break
 
-        track_nums = [track["track_num"] for track in self.tracks]
+        track_nums = [track.track_num for track in tracks]
         if len(track_nums) != len(set(track_nums)):
             self.logger.debug(" Duplicate track numbers found, re-numbering based on position..")
-            track_positions = {}
+            track_positions: dict[str, int] = {}
             if "track" in page_json and "itemListElement" in page_json["track"]:
                 for item in page_json["track"]["itemListElement"]:
-                    track_url = item["item"]["@id"]
+                    full_track_url = item["item"]["@id"]
                     position = item["position"]
-                    track_positions[track_url] = position
+                    track_positions[full_track_url] = position
 
-            if "/track/" in page_json["url"]:
-                artist_url = page_json["url"].rpartition("/track/")[0]
-            else:
-                artist_url = page_json["url"].rpartition("/album/")[0]
-
-            for track in self.tracks:
-                full_track_url = f"{artist_url}{track['title_link']}"
-                if full_track_url in track_positions:
-                    track["track_num"] = track_positions[full_track_url]
+            for i, track in enumerate(tracks):
+                if track.full_track_url in track_positions:
+                    track.track_num = track_positions[track.full_track_url]
                 else:
-                    self.logger.debug(f" Could not find position for track: {full_track_url}")
-                    track["track_num"] = self.tracks.index(track) + 1
+                    self.logger.debug(f" Could not find position for track: {track.full_track_url}")
+                    track.track_num = i + 1
 
-        album_release = page_json["album_release_date"]
-        if album_release is None:
-            album_release = page_json["current"]["release_date"]
-            if album_release is None:
-                album_release = page_json["embed_info"]["item_public"]
+        album_date: str = page_json["album_release_date"]
+        if album_date is None:
+            album_date = page_json["current"]["release_date"]
+        if album_date is None:
+            album_date = page_json["embed_info"]["item_public"]
 
         try:
-            album_title = page_json["current"]["title"]
+            album_title: str = page_json["current"]["title"]
         except KeyError:
             album_title = page_json["trackinfo"][0]["title"]
 
         try:
-            label = page_json["item_sellers"][f"{page_json['current']['selling_band_id']}"]["name"]
+            label: str | None = page_json["item_sellers"][f"{page_json['current']['selling_band_id']}"]["name"]
         except KeyError:
             label = None
 
-        album_id = None
-        track_id_from_music_recording = None
+        album_id: int | None = None
+        track_id_from_music_recording: str | None = None
 
         if page_json.get("@type") == "MusicRecording":
             if "additionalProperty" in page_json:
@@ -168,64 +172,51 @@ class Bandcamp:
                         album_id = track_id_from_music_recording
                         self.logger.debug(f" Single track page, found track_id: {track_id_from_music_recording}")
                         break
-        elif page_json.get("@type") == "MusicAlbum":
-            if "albumRelease" in page_json:
-                for release in page_json["albumRelease"]:
-                    if "additionalProperty" in release:
-                        for prop in release["additionalProperty"]:
-                            if prop.get("name") == "item_id":
-                                album_id = prop.get("value")
-                                self.logger.debug(f" Album page, found album_id: {album_id}")
-                                break
-                    if album_id:
-                        break
+        elif page_json.get("@type") == "MusicAlbum" and "albumRelease" in page_json:
+            for release in page_json["albumRelease"]:
+                if "additionalProperty" in release:
+                    for prop in release["additionalProperty"]:
+                        if prop.get("name") == "item_id":
+                            album_id = prop.get("value")
+                            self.logger.debug(f" Album page, found album_id: {album_id}")
+                            break
+                if album_id:
+                    break
 
-        album = {
-            "tracks": [],
-            "title": album_title,
-            "artist": page_json["artist"],
-            "label": label,
-            "full": False,
-            "art": "",
-            "date": str(datetime.datetime.strptime(album_release, "%d %b %Y %H:%M:%S GMT").year),
-            "url": url,
-            "genres": "",
-            "album_id": album_id,
-        }
-
-        if "/track/" in page_json["url"]:
-            artist_url = page_json["url"].rpartition("/track/")[0]
-        else:
-            artist_url = page_json["url"].rpartition("/album/")[0]
-
-        for track in self.tracks:
-            full_track_url = f"{artist_url}{track['title_link']}"
+        for track in tracks:
             if track_id_from_music_recording:
-                track["track_id"] = track_id_from_music_recording
-            else:
-                track["track_id"] = track_ids.get(full_track_url)
+                track.track_id = track_id_from_music_recording
+            elif track.track_id is None:
+                track.track_id = track_ids.get(track.full_track_url)
 
-            if lyrics:
-                track["lyrics"] = self.get_track_lyrics(f"{artist_url}{track['title_link']}#lyrics")
+            if add_lyrics:
+                track.lyrics = self.get_track_lyrics(track.full_track_url)
 
-            if track["file"] is not None:
-                track = self.get_track_metadata(track)
-                album["tracks"].append(track)
+        tracks = [t for t in tracks if t.file is not None]
 
-        album["full"] = self.all_tracks_available()
-        if art:
-            album["art"] = self.get_album_art(cover_quality)
-        if genres:
-            album["genres"] = "; ".join(page_json["keywords"])
+        album = Album(
+            tracks=tracks,
+            title=album_title,
+            artist=page_json["artist"],
+            label=label,
+            all_tracks_have_url=all(track.file is not None for track in tracks),
+            art=self.get_album_art(soup=soup, quality=cover_quality) if add_art else None,
+            date=str(datetime.datetime.strptime(album_date, "%d %b %Y %H:%M:%S GMT").year),
+            url=url,
+            genres="; ".join(page_json["keywords"]) if add_genres else None,
+            album_id=album_id,
+        )
 
         self.logger.debug(" Album generated..")
-        self.logger.debug(" Album URL: %s", album["url"])
+        self.logger.debug(" Album URL: %s", album.url)
 
         return album
 
-    def get_track_lyrics(self, track_url):
+    def get_track_lyrics(self, track_url: str) -> str:
+        lyrics_url = f"{track_url}#lyrics"
+
         self.logger.debug(" Fetching track lyrics..")
-        track_page = self.session.get(track_url, headers=self.headers)
+        track_page = self.session.get(lyrics_url, headers=self.headers)
         try:
             track_soup = bs4.BeautifulSoup(track_page.text, "lxml")
         except bs4.FeatureNotFound:
@@ -234,50 +225,31 @@ class Bandcamp:
         if track_lyrics:
             self.logger.debug(" Lyrics retrieved..")
             return track_lyrics.text
-        else:
-            self.logger.debug(" Lyrics not found..")
-            return ""
+        self.logger.debug(" Lyrics not found..")
+        return ""
 
-    def all_tracks_available(self) -> bool:
-        """Verify that all tracks have a url
-
-        :return: True if all urls accounted for
-        """
-        for track in self.tracks:
-            if track["file"] is None:
-                return False
-        return True
-
-    def get_track_metadata(self, track: dict or None) -> dict:
-        """Extract individual track metadata
-
-        :param track: track dict
-        :return: track metadata dict
-        """
+    def parse_track(self, track_raw: dict[str, Any]) -> Track:
         self.logger.debug(" Generating track metadata..")
-        track_metadata = {
-            "duration": track["duration"],
-            "track": str(track["track_num"]),
-            "title": track["title"],
-            "artist": track["artist"],
-            "track_id": track.get("track_id"),
-            "url": None,
-        }
-
-        if "mp3-128" in track["file"]:
-            if "https" in track["file"]["mp3-128"]:
-                track_metadata["url"] = track["file"]["mp3-128"]
+        track = Track(
+            duration=track_raw["duration"],
+            track_num=track_raw["track_num"],
+            title=track_raw["title"],
+            artist=track_raw["artist"],
+            track_id=track_raw.get("track_id"),
+            partial_url=track_raw["title_link"],
+            file=track_raw["file"],
+        )
+        if "mp3-128" in track_raw["file"]:
+            if "https" in track_raw["file"]["mp3-128"]:
+                track.download_url = track_raw["file"]["mp3-128"]
             else:
-                track_metadata["url"] = "http:" + track["file"]["mp3-128"]
-        else:
-            track_metadata["url"] = None
+                track.download_url = "http:" + track_raw["file"]["mp3-128"]
 
-        if track["has_lyrics"] is not False:
-            if track["lyrics"] is not None:
-                track_metadata["lyrics"] = track["lyrics"].replace("\\r\\n", "\n")
+        if track_raw["has_lyrics"] is not False and track_raw["lyrics"] is not None:
+            track.lyrics = track_raw["lyrics"].replace("\\r\\n", "\n")
 
         self.logger.debug(" Track metadata generated..")
-        return track_metadata
+        return track
 
     @staticmethod
     def generate_album_url(artist: str, slug: str, page_type: str) -> str:
@@ -290,19 +262,14 @@ class Bandcamp:
         """
         return f"http://{artist}.bandcamp.com/{page_type}/{slug}"
 
-    def get_album_art(self, quality: int = 0) -> str:
-        """Find and retrieve album art url from page
-
-        :param quality: The quality of the album art to retrieve
-        :return: url as str
-        """
+    def get_album_art(self, soup: bs4.BeautifulSoup, quality: int = 0) -> str | None:
         try:
-            url = self.soup.find(id="tralbumArt").find_all("a")[0]["href"]
+            url = soup.find(id="tralbumArt").find_all("a")[0]["href"]
             return f"{url[:-6]}{quality}{url[-4:]}"
-        except None:
-            pass
+        except Exception:
+            return None
 
-    def get_full_discography(self, artist: str, page_type: str) -> list:
+    def get_full_discography(self, artist: str, page_type: str) -> list[str]:
         """Generate a list of album and track urls based on the artist name
 
         :param artist: artist name
@@ -311,7 +278,7 @@ class Bandcamp:
         :return: urls as list of strs
         """
 
-        album_urls = set()
+        album_urls: set[str] = set()
 
         music_page_url = f"https://{artist}.bandcamp.com/{page_type}"
         self.logger.info(f"Scraping discography from: {music_page_url}")

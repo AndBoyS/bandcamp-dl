@@ -1,15 +1,18 @@
+from __future__ import annotations
+
 import logging
 import os
 import re
 import shutil
+from argparse import Namespace
+from typing import Any
 
-from mutagen import mp3
-from mutagen import id3
 import requests
 import slugify
+from mutagen import id3, mp3
 
-from bandcamp_dl import __version__
-from bandcamp_dl.config import CASE_LOWER, CASE_UPPER, CASE_CAMEL, CASE_NONE
+from bandcamp_dl.config import CASE_CAMEL, CASE_LOWER, CASE_UPPER, Album
+from bandcamp_dl.const import VERSION
 
 
 def print_clean(msg):
@@ -18,40 +21,38 @@ def print_clean(msg):
 
 
 class BandcampDownloader:
-    def __init__(self, config, urls=None):
+    def __init__(self, config: Namespace, urls: list[str] | None = None):
         """Initialize variables we will need throughout the Class
 
         :param config: user config/args
         :param urls: list of urls
         """
-        self.headers = {"User-Agent": f"bandcamp-dl/{__version__} (https://github.com/evolution0/bandcamp-dl)"}
+        self.headers = {"User-Agent": f"bandcamp-dl/{VERSION} (https://github.com/evolution0/bandcamp-dl)"}
         self.session = requests.Session()
         self.logger = logging.getLogger("bandcamp-dl").getChild("Downloader")
-
-        if type(urls) is str:
-            self.urls = [urls]
-
         self.config = config
         self.urls = urls
 
-    def start(self, album: dict):
+    def start(self, album: Album) -> None:
         """Start album download process
 
         :param album: album dict
         """
 
-        if not album["full"] and not self.config.no_confirm:
+        if not album.all_tracks_have_url and not self.config.no_confirm:
             choice = input("Track list incomplete, some tracks may be private, download anyway? (yes/no): ").lower()
-            if choice == "yes" or choice == "y":
+            if choice in {"yes", "y"}:
                 print("Starting download process.")
                 self.download_album(album)
             else:
                 print("Cancelling download process.")
-                return None
+                return
         else:
             self.download_album(album)
 
-    def template_to_path(self, track: dict, ascii_only, ok_chars, space_char, keep_space, case_mode) -> str:
+    def template_to_path(
+        self, track: dict[str, Any], ascii_only: bool, ok_chars: str, space_char: str, keep_space: bool, case_mode: str
+    ) -> str:
         """Create valid filepath based on template
 
         :param track: track metadata
@@ -63,8 +64,8 @@ class BandcampDownloader:
         :return: filepath
         """
         self.logger.debug(" Generating filepath/trackname..")
-        path = self.config.template
-        self.logger.debug(f"\n\tTemplate: {path}")
+        template: str = self.config.template
+        self.logger.debug(f"\n\tTemplate: {template}")
 
         def slugify_preset(content):
             retain_case = case_mode != CASE_LOWER
@@ -72,7 +73,7 @@ class BandcampDownloader:
                 content = content.upper()
             if case_mode == CASE_CAMEL:
                 content = re.sub(r"(((?<=\s)|^|-)[a-z])", lambda x: x.group().upper(), content.lower())
-            slugged = slugify.slugify(
+            return slugify.slugify(
                 content,
                 ok=ok_chars,
                 only_ascii=ascii_only,
@@ -80,7 +81,6 @@ class BandcampDownloader:
                 lower=not retain_case,
                 space_replacement=space_char,
             )
-            return slugged
 
         template_tokens = ["trackartist", "artist", "album", "title", "date", "label", "track", "album_id", "track_id"]
         for token in template_tokens:
@@ -102,21 +102,15 @@ class BandcampDownloader:
             else:
                 track["track"] = str(track["track"]).zfill(2)
 
-            if self.config.no_slugify:
-                replacement = str(track.get(key, ""))
-            else:
-                replacement = slugify_preset(track.get(key, ""))
+            replacement = str(track.get(key, "")) if self.config.no_slugify else slugify_preset(track.get(key, ""))
 
-            path = path.replace(f"%{{{token}}}", replacement)
+            template = template.replace(f"%{{{token}}}", replacement)
 
-        if self.config.base_dir is not None:
-            path = f"{self.config.base_dir}/{path}.mp3"
-        else:
-            path = f"{path}.mp3"
+        output = f"{self.config.base_dir}/{template}.mp3" if self.config.base_dir is not None else f"{template}.mp3"
 
         self.logger.debug(" filepath/trackname generated..")
-        self.logger.debug(f"\n\tPath: {path}")
-        return path
+        self.logger.debug(f"\n\tPath: {output}")
+        return output
 
     def create_directory(self, filename: str) -> str:
         """Create directory based on filename if it doesn't exist
@@ -132,27 +126,27 @@ class BandcampDownloader:
 
         return directory
 
-    def download_album(self, album: dict) -> bool:
+    def download_album(self, album: Album) -> bool:
         """Download all MP3 files in the album
 
         :param album: album dict
         :return: True if successful
         """
-        for track_index, track in enumerate(album["tracks"]):
-            track_meta = {
-                "artist": track["artist"],
-                "albumartist": album["artist"],
-                "label": album["label"],
-                "album": album["title"],
-                "title": track["title"].replace(f"{track['artist']} - ", "", 1),
-                "track": track["track"],
-                "track_id": track["track_id"],
-                "album_id": album["album_id"],
+        for track_index, track in enumerate(album.tracks):
+            track_meta: dict[str, Any] = {
+                "artist": track.artist,
+                "albumartist": album.artist,
+                "label": album.label,
+                "album": album.title,
+                "title": track.title.replace(f"{track.artist} - ", "", 1),
+                "track": str(track.track_num),
+                "track_id": track.track_id,
+                "album_id": album.album_id,
                 # TODO: Find out why the 'lyrics' key seems to vanish.
-                "lyrics": track.get("lyrics", ""),
-                "date": album["date"],
-                "url": album["url"],
-                "genres": album["genres"],
+                "lyrics": track.lyrics,
+                "date": album.date,
+                "url": album.url,
+                "genres": album.genres,
             }
 
             path_meta = track_meta.copy()
@@ -163,7 +157,7 @@ class BandcampDownloader:
             if self.config.truncate_track > 0 and len(path_meta["title"]) > self.config.truncate_track:
                 path_meta["title"] = path_meta["title"][: self.config.truncate_track]
 
-            self.num_tracks = len(album["tracks"])
+            self.num_tracks = len(album.tracks)
             self.track_num = track_index + 1
 
             filepath = self.template_to_path(
@@ -180,10 +174,10 @@ class BandcampDownloader:
 
             self.logger.debug(" Current file:\n\t%s", filepath)
 
-            if album["art"] and not os.path.exists(dirname + "/cover.jpg"):
+            if album.art and not os.path.exists(dirname + "/cover.jpg"):
                 try:
                     with open(dirname + "/cover.jpg", "wb") as f:
-                        r = self.session.get(album["art"], headers=self.headers)
+                        r = self.session.get(album.art, headers=self.headers)
                         f.write(r.content)
                     self.album_art = dirname + "/cover.jpg"
                 except Exception as e:
@@ -195,7 +189,7 @@ class BandcampDownloader:
 
             while True:
                 try:
-                    r = self.session.get(track["url"], headers=self.headers, stream=True)
+                    r = self.session.get(track.download_url, headers=self.headers, stream=True)
                     file_length = int(r.headers.get("content-length", 0))
                     total = int(file_length / 100)
                     # If file exists and is still a tmp file skip downloading and encode
@@ -205,7 +199,7 @@ class BandcampDownloader:
                         skip = True
                         # break out of the try/except and move on to the next file
                         break
-                    elif os.path.exists(filepath[:-4]) and self.config.overwrite is not True:
+                    if os.path.exists(filepath[:-4]) and self.config.overwrite is not True:
                         print(f"File: {filename[:-4]} already exists and is complete, skipping..")
                         skip = True
                         break
@@ -227,18 +221,17 @@ class BandcampDownloader:
                     local_size = os.path.getsize(filepath)
                     # if the local filesize before encoding doesn't match the remote filesize
                     # redownload
-                    if local_size != file_length and attempts != 3:
+                    if local_size != file_length and attempts != 3:  # noqa: PLR2004
                         print(f"{filename} is incomplete, retrying..")
                         continue
                     # if the maximum number of retry attempts is reached give up and move on
-                    elif attempts == 3:
+                    if attempts == 3:  # noqa: PLR2004
                         print("Maximum retries reached.. skipping.")
                         # Clean up incomplete file
                         os.remove(filepath)
                         break
                     # if all is well continue the download process for the rest of the tracks
-                    else:
-                        break
+                    break
                 except Exception as e:
                     print(e)
                     print("Downloading failed..")
@@ -246,8 +239,8 @@ class BandcampDownloader:
             if skip is False:
                 self.write_id3_tags(filepath, track_meta)
 
-        if os.path.isfile(f"{self.config.base_dir}/{__version__}.not.finished"):
-            os.remove(f"{self.config.base_dir}/{__version__}.not.finished")
+        if os.path.isfile(f"{self.config.base_dir}/{VERSION}.not.finished"):
+            os.remove(f"{self.config.base_dir}/{VERSION}.not.finished")
 
         # Remove album art image as it is embedded
         if self.config.embed_art and hasattr(self, "album_art"):
@@ -311,7 +304,7 @@ class BandcampDownloader:
 
         try:
             os.rename(filepath, filepath[:-4])
-        except WindowsError:
+        except OSError:
             os.remove(filepath[:-4])
             os.rename(filepath, filepath[:-4])
 

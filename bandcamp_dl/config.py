@@ -1,11 +1,10 @@
-import argparse
-import ast
+from __future__ import annotations
+
 import json
 import os
-import pathlib
-import sys
+from pathlib import Path
 
-from bandcamp_dl import __version__
+from pydantic import BaseModel, ConfigDict
 
 TEMPLATE = "%{artist}/%{album}/%{track} - %{title}"
 OK_CHARS = "-_~"
@@ -14,7 +13,7 @@ CASE_LOWER = "lower"
 CASE_UPPER = "upper"
 CASE_CAMEL = "camel"
 CASE_NONE = "none"
-USER_HOME = pathlib.Path.home()
+USER_HOME = Path.home()
 # For Linux/BSD https://www.freedesktop.org/wiki/Software/xdg-user-dirs/
 # For Windows ans MacOS .appname is fine
 CONFIG_PATH = USER_HOME / (".config" if os.name == "posix" else ".bandcamp-dl") / "bandcamp-dl.json"
@@ -22,101 +21,70 @@ OPTION_MIGRATION_FORWARD = "forward"
 OPTION_MIGRATION_REVERSE = "reverse"
 
 
-class Config(dict):
-    # TODO: change this to dataclass when support for Python < 3.7 is dropped
-    _defaults = {
-        "base_dir": str(USER_HOME),  # TODO: pass the Path object instead?
-        "template": TEMPLATE,
-        "overwrite": False,
-        "no_art": False,
-        "embed_art": False,
-        "embed_lyrics": False,
-        "group": False,
-        "no_slugify": False,
-        "ok_chars": OK_CHARS,
-        "space_char": SPACE_CHAR,
-        "ascii_only": False,
-        "keep_spaces": False,
-        "case_mode": CASE_LOWER,
-        "no_confirm": False,
-        "debug": False,
-        "embed_genres": False,
-        "cover_quality": 0,
-        "untitled_path_from_slug": False,
-        "truncate_album": 0,
-        "truncate_track": 0,
-    }
+class GoodBaseModel(BaseModel):
+    model_config = ConfigDict(
+        validate_assignment=True,
+        validate_default=True,
+        extra="forbid",
+    )
 
-    def __init__(self, dict_=None):
-        if dict_ is None:
-            super().__init__(**Config._defaults)
-        else:
-            super().__init__(**dict_)
-        self.__dict__ = self
-        self._read_write_config()
 
-    def _read_write_config(self):
-        if CONFIG_PATH.exists():
-            with pathlib.Path.open(CONFIG_PATH, "r+") as fobj:
-                try:
-                    user_config = json.load(fobj)
-                    # change hyphen with underscore
-                    user_config = {k.replace("-", "_"): v for k, v in user_config.items()}
-                    # overwrite defaults with user provided config
-                    if self._update_with_dict(user_config) or set(user_config.keys()).difference(set(self.keys())):
-                        # persist migrated options, removal of unsupported options, or missing
-                        # options with their defaults
-                        sys.stderr.write(f"Modified configuration has been written to `{CONFIG_PATH}'.\n")
-                        fobj.seek(0)  # r/w mode
-                        fobj.truncate()  # r/w mode
-                        json.dump({k: v for k, v in self.items()}, fobj)
-                except json.JSONDecodeError:
-                    # NOTE: we don't have logger yet
-                    sys.stderr.write(f"Malformed configuration file `{CONFIG_PATH}'. Check json syntax.\n")
-        else:
-            # No config found - populate it with the defaults
-            os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
-            with pathlib.Path.open(CONFIG_PATH, mode="w") as fobj:
-                conf = {k.replace("_", "-"): v for k, v in self.items()}
-                json.dump(conf, fobj)
-            sys.stderr.write(f"Configuration has been written to `{CONFIG_PATH}'.\n")
+class Config(GoodBaseModel):
+    base_dir: Path = USER_HOME
+    template: str = TEMPLATE
+    overwrite: bool = False
+    no_art: bool = False
+    embed_art: bool = False
+    embed_lyrics: bool = False
+    group: bool = False
+    no_slugify: bool = False
+    ok_chars: str = OK_CHARS
+    space_char: str = SPACE_CHAR
+    case_mode: str = CASE_LOWER
+    ascii_only: bool = False
+    keep_spaces: bool = False
+    no_confirm: bool = False
+    debug: bool = False
+    embed_genres: bool = False
+    untitled_path_from_slug: bool = False
+    cover_quality: int = 0
+    truncate_album: int = 0
+    truncate_track: int = 0
 
-    def _update_with_dict(self, dict_):
-        """update this config instance with the persisted key-value
-        set, migrating or dropping any unknown options and returning
-        true when the underlying config needs updating"""
-        modified = False
-        for key, val in dict_.items():
-            if key not in self:
-                modified = True
-                if not self._migrate_option(key, val):
-                    sys.stderr.write(f"Dropping unknown config option '{key}={val}'\n")
-                continue
-            self[key] = val
 
-    def _migrate_option(self, key, val):
-        """where supported, migrate legacy options and their values
-        to update this config instance's new option, returning
-        true / false to indicate whether or not this key was
-        supported"""
-        migration_type = migration_key = migration_val = None
-        if key == "keep_upper":
-            # forward migration
-            migration_type = OPTION_MIGRATION_FORWARD
-            migration_key = "case_mode"
-            migration_val = self.case_mode = CASE_NONE if val else CASE_LOWER
-        elif key == "case_mode":
-            # reverse migration
-            migration_type = OPTION_MIGRATION_REVERSE
-            migration_key = "keep_upper"
-            migration_val = self.keep_upper = False if val == CASE_LOWER else True
-            if val in [CASE_UPPER, CASE_CAMEL]:
-                sys.stderr.write(f"Warning, lossy reverse migration, new value '{val}' is not backwards compatible\n")
-        if migration_type:
-            sys.stderr.write(
-                f"{migration_type.capitalize()} migration of config option: '{key}={val}' -> "
-                f"'{migration_key}={migration_val}'\n"
-            )
-            return True
-        else:
-            return False
+class Track(GoodBaseModel):
+    title: str
+    duration: float
+    track_id: int | None
+    track_num: int
+    partial_url: str | None = None
+    download_url: str | None = None
+    artist: str | None = None
+    artist_url: str | None = None
+    lyrics: str | None = None
+    file: dict[str, str] | None = None
+
+    @property
+    def full_track_url(self) -> str:
+        return f"{self.artist_url}{self.partial_url}"
+
+
+class Album(GoodBaseModel):
+    tracks: list[Track]
+    title: str
+    artist: str
+    label: str | None = None
+    all_tracks_have_url: bool
+    art: str | None = None
+    date: str
+    url: str
+    genres: str | None = None
+    album_id: int | None = None
+
+
+def get_user_config() -> Config:
+    if CONFIG_PATH.exists():
+        with CONFIG_PATH.open() as f:
+            json_config = json.load(f)
+        return Config(**json_config)
+    return Config()
