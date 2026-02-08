@@ -9,17 +9,17 @@ from urllib.parse import urlparse
 from bandcamp_dl import config
 from bandcamp_dl.bandcamp import Bandcamp
 from bandcamp_dl.bandcampdownloader import BandcampDownloader
-from bandcamp_dl.config import Album
+from bandcamp_dl.config import Album, get_user_config
 from bandcamp_dl.const import VERSION
 
 
 def main() -> None:
-    default_conf = config.Config()
+    user_conf = get_user_config()
 
     parser = argparse.ArgumentParser()
     parser.add_argument("URL", help="Bandcamp album/track URL", nargs="*")
     parser.add_argument("-v", "--version", action="store_true", help="Show version")
-    parser.add_argument("-d", "--debug", action="store_true", help="Verbose logging", default=default_conf.debug)
+    parser.add_argument("-d", "--debug", action="store_true", help="Verbose logging", default=user_conf.debug)
     parser.add_argument("--artist", help="Specify an artist's slug to download their full discography.")
     parser.add_argument(
         "--track", help="Specify a track's slug to download a single track. Must be used with --artist."
@@ -29,44 +29,42 @@ def main() -> None:
     )
     parser.add_argument(
         "--template",
-        help=f"Output filename template, default: {default_conf.template.replace('%', '%%')}",
-        default=default_conf.template,
+        help=f"Output filename template, default: {user_conf.template.replace('%', '%%')}",
+        default=user_conf.template,
     )
     parser.add_argument(
-        "--base-dir", help="Base location of which all files are downloaded", default=default_conf.base_dir
+        "--base-dir", help="Base location of which all files are downloaded", default=user_conf.base_dir
     )
     parser.add_argument("-f", "--full-album", help="Download only if all tracks are available", action="store_true")
     parser.add_argument(
         "-o",
         "--overwrite",
         action="store_true",
-        help=f"Overwrite tracks that already exist. Default is {default_conf.overwrite}.",
-        default=default_conf.overwrite,
+        help=f"Overwrite tracks that already exist. Default is {user_conf.overwrite}.",
+        default=user_conf.overwrite,
     )
-    parser.add_argument(
-        "-n", "--no-art", help="Skip grabbing album art", action="store_true", default=default_conf.no_art
-    )
+    parser.add_argument("-n", "--no-art", help="Skip grabbing album art", action="store_true", default=user_conf.no_art)
     parser.add_argument(
         "-e",
         "--embed-lyrics",
         help="Embed track lyrics (If available)",
         action="store_true",
-        default=default_conf.embed_lyrics,
+        default=user_conf.embed_lyrics,
     )
     parser.add_argument(
         "-g",
         "--group",
         help="Use album/track Label as iTunes grouping",
         action="store_true",
-        default=default_conf.group,
+        default=user_conf.group,
     )
     parser.add_argument(
-        "-r", "--embed-art", help="Embed album art (If available)", action="store_true", default=default_conf.embed_art
+        "-r", "--embed-art", help="Embed album art (If available)", action="store_true", default=user_conf.embed_art
     )
     parser.add_argument(
         "--cover-quality",
         help="Set the cover art quality. 0 is source, 10 is album page (1200x1200), 16 is default embed (700x700).",
-        default=default_conf.cover_quality,
+        default=user_conf.cover_quality,
         type=int,
         choices=[0, 10, 16],
     )
@@ -74,46 +72,46 @@ def main() -> None:
         "--untitled-path-from-slug",
         help="For albums titled untitled, use the URL slug to generate the folder path.",
         action="store_true",
-        default=default_conf.untitled_path_from_slug,
+        default=user_conf.untitled_path_from_slug,
     )
     parser.add_argument(
         "-y",
         "--no-slugify",
         action="store_true",
-        default=default_conf.no_slugify,
+        default=user_conf.no_slugify,
         help="Disable slugification of track, album, and artist names",
     )
     parser.add_argument(
         "-c",
         "--ok-chars",
-        default=default_conf.ok_chars,
-        help=f"Specify allowed chars in slugify, default: {default_conf.ok_chars}",
+        default=user_conf.ok_chars,
+        help=f"Specify allowed chars in slugify, default: {user_conf.ok_chars}",
     )
     parser.add_argument(
         "-s",
         "--space-char",
-        help=f"Specify the char to use in place of spaces, default: {default_conf.space_char}",
-        default=default_conf.space_char,
+        help=f"Specify the char to use in place of spaces, default: {user_conf.space_char}",
+        default=user_conf.space_char,
     )
     parser.add_argument(
         "-a",
         "--ascii-only",
         help="Only allow ASCII chars (北京 (capital of china) -> bei-jing-capital-of-china)",
         action="store_true",
-        default=default_conf.ascii_only,
+        default=user_conf.ascii_only,
     )
     parser.add_argument(
         "-k",
         "--keep-spaces",
         help="Retain whitespace in filenames",
         action="store_true",
-        default=default_conf.keep_spaces,
+        default=user_conf.keep_spaces,
     )
     parser.add_argument(
         "-x",
         "--case-convert",
-        help=f"Specify the char case conversion logic, default: {default_conf.case_mode}",
-        default=default_conf.case_mode,
+        help=f"Specify the char case conversion logic, default: {user_conf.case_mode}",
+        default=user_conf.case_mode,
         dest="case_mode",
         choices=[config.CASE_LOWER, config.CASE_UPPER, config.CASE_CAMEL, config.CASE_NONE],
     )
@@ -121,10 +119,10 @@ def main() -> None:
         "--no-confirm",
         help="Override confirmation prompts. Use with caution",
         action="store_true",
-        default=default_conf.no_confirm,
+        default=user_conf.no_confirm,
     )
     parser.add_argument(
-        "--embed-genres", help="Embed album/track genres", action="store_true", default=default_conf.embed_genres
+        "--embed-genres", help="Embed album/track genres", action="store_true", default=user_conf.embed_genres
     )
     parser.add_argument(
         "--truncate-album",
@@ -142,6 +140,7 @@ def main() -> None:
     )
 
     arguments = parser.parse_args()
+
     if arguments.version:
         sys.stdout.write(f"bandcamp-dl {VERSION}\n")
         return
@@ -170,6 +169,7 @@ def main() -> None:
     ]:
         if not getattr(arguments, arg):
             setattr(arguments, arg, val)
+
     bandcamp = Bandcamp()
 
     urls: list[str]
