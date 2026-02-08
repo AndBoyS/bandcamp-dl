@@ -23,7 +23,7 @@ dependencies = [
   "pydantic>=2.10.6",
   "requests >= 2.32.3",
   "toml>=0.10.2",
-  "unicode-slugify >= 0.1.5",
+  "unicode-slugify>=0.1.5",
   "urllib3 >= 2.2.2",
 ]
 
@@ -39,6 +39,9 @@ build-backend = "uv_build"
 [tool.uv.build-backend]
 module-name = "bandcamp_dl"
 module-root = ""
+
+[tool.uv.sources]
+unicode-slugify = { git = "https://github.com/dnicolson/unicode-slugify.git" }
 
 [tool.ruff]
 line-length = 120

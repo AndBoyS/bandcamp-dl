@@ -52,7 +52,7 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.10.6" },
     { name = "requests", specifier = ">=2.32.3" },
     { name = "toml", specifier = ">=0.10.2" },
-    { name = "unicode-slugify", specifier = ">=0.1.5" },
+    { name = "unicode-slugify", git = "https://github.com/dnicolson/unicode-slugify.git" },
     { name = "urllib3", specifier = ">=2.2.2" },
 ]
 
@@ -688,14 +688,10 @@ wheels = [
 [[package]]
 name = "unicode-slugify"
 version = "0.1.5"
-source = { registry = "https://pypi.org/simple" }
+source = { git = "https://github.com/dnicolson/unicode-slugify.git#74d175dd4c9d21b1586842a3909118c7ec58f4ce" }
 dependencies = [
     { name = "six" },
     { name = "unidecode" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/ed/37/c82a28893c7bfd881c011cbebf777d2a61f129409d83775f835f70e02c20/unicode-slugify-0.1.5.tar.gz", hash = "sha256:25f424258317e4cb41093e2953374b3af1f23097297664731cdb3ae46f6bd6c3", size = 5784, upload-time = "2021-10-20T19:06:27.908Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/c7/a1/53414fffc089249eee742c1ce04b22761980d2aaea37e23b94775ff51007/unicode_slugify-0.1.5-py3-none-any.whl", hash = "sha256:33a11c0ac901f7220659dd0dd6f232cf39637dfd1b9f5f35ef5ead9fef696879", size = 6358, upload-time = "2021-10-20T19:06:26.465Z" },
 ]
 
 [[package]]
