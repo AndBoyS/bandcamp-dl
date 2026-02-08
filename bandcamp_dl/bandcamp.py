@@ -239,9 +239,10 @@ class Bandcamp:
             partial_url=track_raw["title_link"],
             file=track_raw["file"],
         )
-        if "mp3-128" in track_raw["file"]:
+
+        if track.file and "mp3-128" in track.file:
             if "https" in track_raw["file"]["mp3-128"]:
-                track.download_url = track_raw["file"]["mp3-128"]
+                track.download_url = track.file["mp3-128"]
             else:
                 track.download_url = "http:" + track_raw["file"]["mp3-128"]
 
