@@ -41,7 +41,7 @@ module-name = "bandcamp_dl"
 module-root = ""
 
 [tool.uv.sources]
-unicode-slugify = { git = "https://github.com/dnicolson/unicode-slugify.git" }
+unicode-slugify = { git = "https://github.com/dnicolson/unicode-slugify.git", rev = "a18826f" }
 
 [tool.ruff]
 line-length = 120

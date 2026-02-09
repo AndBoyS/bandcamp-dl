@@ -52,7 +52,7 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.10.6" },
     { name = "requests", specifier = ">=2.32.3" },
     { name = "toml", specifier = ">=0.10.2" },
-    { name = "unicode-slugify", git = "https://github.com/dnicolson/unicode-slugify.git" },
+    { name = "unicode-slugify", git = "https://github.com/dnicolson/unicode-slugify.git?rev=a18826f" },
     { name = "urllib3", specifier = ">=2.2.2" },
 ]
 
@@ -688,7 +688,7 @@ wheels = [
 [[package]]
 name = "unicode-slugify"
 version = "0.1.5"
-source = { git = "https://github.com/dnicolson/unicode-slugify.git#74d175dd4c9d21b1586842a3909118c7ec58f4ce" }
+source = { git = "https://github.com/dnicolson/unicode-slugify.git?rev=a18826f#a18826f440d0b74e536f5e32ebdcf30e720f20d8" }
 dependencies = [
     { name = "six" },
     { name = "unidecode" },
