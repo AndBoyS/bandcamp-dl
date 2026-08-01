@@ -3,13 +3,17 @@ from __future__ import annotations
 import datetime
 import json
 import logging
+import ssl
 import sys
 from typing import Any
 from urllib.parse import urljoin
 
 import bs4
 import requests
+from bs4.element import Tag
 from requests.adapters import HTTPAdapter
+from typing_extensions import override
+from urllib3 import PoolManager
 from urllib3.util import create_urllib3_context
 
 from bandcamp_dl.bandcampjson import BandcampJSON
@@ -18,17 +22,25 @@ from bandcamp_dl.const import VERSION
 
 
 class SSLAdapter(HTTPAdapter):
-    def __init__(self, ssl_context=None, **kwargs):
+    def __init__(self, ssl_context: ssl.SSLContext | None = None, **kwargs: Any) -> None:
         self.ssl_context = ssl_context
         super().__init__(**kwargs)
 
-    def init_poolmanager(self, *args, **kwargs):
+    @override
+    def init_poolmanager(self, *args: Any, **kwargs: Any) -> PoolManager:
         kwargs["ssl_context"] = self.ssl_context
-        return super().init_poolmanager(*args, **kwargs)
+        super().init_poolmanager(*args, **kwargs)
+        # requests' HTTPAdapter.init_poolmanager() sets self.poolmanager and returns None,
+        # so read the manager off the instance rather than the (empty) return value.
+        assert isinstance(self.poolmanager, PoolManager)
+        return self.poolmanager
 
-    def proxy_manager_for(self, *args, **kwargs):
+    @override
+    def proxy_manager_for(self, *args: Any, **kwargs: Any) -> PoolManager:
         kwargs["ssl_context"] = self.ssl_context
-        return super().proxy_manager_for(*args, **kwargs)
+        result = super().proxy_manager_for(*args, **kwargs)
+        assert isinstance(result, PoolManager)
+        return result
 
 
 # Create the SSL context with the custom ciphers
@@ -58,7 +70,7 @@ ctx.set_ciphers(DEFAULT_CIPHERS)
 
 
 class Bandcamp:
-    def __init__(self):
+    def __init__(self) -> None:
         self.headers = {"User-Agent": f"bandcamp-dl/{VERSION} (https://github.com/evolution0/bandcamp-dl)"}
         self.logger = logging.getLogger("bandcamp-dl").getChild("Main")
 
@@ -111,6 +123,7 @@ class Bandcamp:
         tracks_raw: list[dict[str, Any]] = page_json["trackinfo"]
         tracks = [self.parse_track(t) for t in tracks_raw]
 
+        artist_url: str
         if "/track/" in page_json["url"]:
             artist_url = page_json["url"].rpartition("/track/")[0]
         else:
@@ -122,10 +135,13 @@ class Bandcamp:
         track_ids: dict[str, int] = {}
         if "track" in page_json and "itemListElement" in page_json["track"]:
             for item in page_json["track"]["itemListElement"]:
-                track_url: str = item["item"]["@id"]
+                track_url = item["item"]["@id"]
+                assert isinstance(track_url, str)
                 for prop in item["item"].get("additionalProperty", []):
                     if prop.get("name") == "track_id":
-                        track_ids[track_url] = prop.get("value")
+                        value = prop["value"]
+                        assert isinstance(value, int)
+                        track_ids[track_url] = value
                         break
 
         track_nums = [track.track_num for track in tracks]
@@ -135,7 +151,9 @@ class Bandcamp:
             if "track" in page_json and "itemListElement" in page_json["track"]:
                 for item in page_json["track"]["itemListElement"]:
                     full_track_url = item["item"]["@id"]
+                    assert isinstance(full_track_url, str)
                     position = item["position"]
+                    assert isinstance(position, int)
                     track_positions[full_track_url] = position
 
             for i, track in enumerate(tracks):
@@ -162,13 +180,14 @@ class Bandcamp:
             label = None
 
         album_id: int | None = None
-        track_id_from_music_recording: str | None = None
+        track_id_from_music_recording: int | None = None
 
         if page_json.get("@type") == "MusicRecording":
             if "additionalProperty" in page_json:
                 for prop in page_json["additionalProperty"]:
                     if prop.get("name") == "track_id":
                         track_id_from_music_recording = prop.get("value")
+                        assert isinstance(track_id_from_music_recording, int) or track_id_from_music_recording is None
                         album_id = track_id_from_music_recording
                         self.logger.debug(f" Single track page, found track_id: {track_id_from_music_recording}")
                         break
@@ -178,13 +197,14 @@ class Bandcamp:
                     for prop in release["additionalProperty"]:
                         if prop.get("name") == "item_id":
                             album_id = prop.get("value")
+                            assert isinstance(album_id, int) or album_id is None
                             self.logger.debug(f" Album page, found album_id: {album_id}")
                             break
-                if album_id:
+                if album_id is not None:
                     break
 
         for track in tracks:
-            if track_id_from_music_recording:
+            if track_id_from_music_recording is not None:
                 track.track_id = track_id_from_music_recording
             elif track.track_id is None:
                 track.track_id = track_ids.get(track.full_track_url)
@@ -222,7 +242,7 @@ class Bandcamp:
         except bs4.FeatureNotFound:
             track_soup = bs4.BeautifulSoup(track_page.text, "html.parser")
         track_lyrics = track_soup.find("div", {"class": "lyricsText"})
-        if track_lyrics:
+        if track_lyrics is not None:
             self.logger.debug(" Lyrics retrieved..")
             return track_lyrics.text
         self.logger.debug(" Lyrics not found..")
@@ -240,7 +260,7 @@ class Bandcamp:
             file=track_raw["file"],
         )
 
-        if track.file and "mp3-128" in track.file:
+        if track.file is not None and "mp3-128" in track.file:
             if "https" in track_raw["file"]["mp3-128"]:
                 track.download_url = track.file["mp3-128"]
             else:
@@ -265,7 +285,9 @@ class Bandcamp:
 
     def get_album_art(self, soup: bs4.BeautifulSoup, quality: int = 0) -> str | None:
         try:
-            url = soup.find(id="tralbumArt").find_all("a")[0]["href"]
+            tralbum = soup.find(id="tralbumArt")
+            assert isinstance(tralbum, Tag)
+            url = tralbum.find_all("a")[0]["href"]
             return f"{url[:-6]}{quality}{url[-4:]}"
         except Exception:
             return None
@@ -296,18 +318,22 @@ class Bandcamp:
             soup = bs4.BeautifulSoup(response.text, "html.parser")
 
         music_grid = soup.find("ol", {"id": "music-grid"})
-        if not music_grid:
+        if music_grid is None:
             self.logger.warning("Could not find music grid on the page. No albums found.")
             return []
 
         if "data-client-items" in music_grid.attrs:
             self.logger.debug("Found data-client-items attribute. Parsing for album URLs.")
             try:
-                json_string = bs4.BeautifulSoup(music_grid["data-client-items"], "html.parser").text
+                data_client_items = music_grid["data-client-items"]
+                assert isinstance(data_client_items, str)
+                json_string = bs4.BeautifulSoup(data_client_items, "html.parser").text
                 items = json.loads(json_string)
                 for item in items:
                     if "page_url" in item:
-                        full_url = urljoin(music_page_url, item["page_url"])
+                        page_url = item["page_url"]
+                        assert isinstance(page_url, str)
+                        full_url = urljoin(music_page_url, page_url)
                         album_urls.add(full_url)
             except (json.JSONDecodeError, TypeError) as e:
                 self.logger.error(f"Failed to parse data-client-items JSON: {e}")
@@ -315,7 +341,8 @@ class Bandcamp:
         self.logger.debug("Scraping all <li> elements in the music grid for links.")
         for a in music_grid.select("li.music-grid-item a"):
             href = a.get("href")
-            if href:
+            if href is not None:
+                assert isinstance(href, str)
                 full_url = urljoin(music_page_url, href)
                 album_urls.add(full_url)
 

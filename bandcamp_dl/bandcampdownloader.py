@@ -15,13 +15,13 @@ from bandcamp_dl.config import CASE_CAMEL, CASE_LOWER, CASE_UPPER, Album
 from bandcamp_dl.const import VERSION
 
 
-def print_clean(msg):
+def print_clean(msg: str) -> None:
     terminal_size = shutil.get_terminal_size()
-    print(f"{msg}{' ' * (int(terminal_size[0]) - len(msg))}", end="")
+    print(f"{msg}{' ' * (terminal_size[0] - len(msg))}", end="")
 
 
 class BandcampDownloader:
-    def __init__(self, config: Namespace, urls: list[str] | None = None):
+    def __init__(self, config: Namespace, urls: list[str] | None = None) -> None:
         """Initialize variables we will need throughout the Class
 
         :param config: user config/args
@@ -32,6 +32,9 @@ class BandcampDownloader:
         self.logger = logging.getLogger("bandcamp-dl").getChild("Downloader")
         self.config = config
         self.urls = urls
+        self.album_art: str | None = None
+        self.num_tracks: int = 0
+        self.track_num: int = 0
 
     def start(self, album: Album) -> None:
         """Start album download process
@@ -43,12 +46,12 @@ class BandcampDownloader:
             choice = input("Track list incomplete, some tracks may be private, download anyway? (yes/no): ").lower()
             if choice in {"yes", "y"}:
                 print("Starting download process.")
-                self.download_album(album)
+                _ = self.download_album(album)
             else:
                 print("Cancelling download process.")
                 return
         else:
-            self.download_album(album)
+            _ = self.download_album(album)
 
     def template_to_path(
         self, track: dict[str, Any], ascii_only: bool, ok_chars: str, space_char: str, keep_space: bool, case_mode: str
@@ -67,13 +70,14 @@ class BandcampDownloader:
         template: str = self.config.template
         self.logger.debug(f"\n\tTemplate: {template}")
 
-        def slugify_preset(content):
+        def slugify_preset(content: str) -> str:
             retain_case = case_mode != CASE_LOWER
             if case_mode == CASE_UPPER:
                 content = content.upper()
             if case_mode == CASE_CAMEL:
+                # pyrefly: ignore [implicit-any-lambda]
                 content = re.sub(r"(((?<=\s)|^|-)[a-z])", lambda x: x.group().upper(), content.lower())
-            return slugify.slugify(
+            result = slugify.slugify(
                 content,
                 ok=ok_chars,
                 only_ascii=ascii_only,
@@ -81,6 +85,8 @@ class BandcampDownloader:
                 lower=not retain_case,
                 space_replacement=space_char,
             )
+            assert isinstance(result, str)
+            return result
 
         template_tokens = ["trackartist", "artist", "album", "title", "date", "label", "track", "album_id", "track_id"]
         for token in template_tokens:
@@ -95,7 +101,9 @@ class BandcampDownloader:
                 track["artist"] = track.get("albumartist")
 
             if self.config.untitled_path_from_slug and token == "album" and track["album"].lower() == "untitled":
-                track["album"] = track["url"].split("/")[-1].replace("-", " ")
+                url = track["url"]
+                assert isinstance(url, str)
+                track["album"] = url.split("/")[-1].replace("-", " ")
 
             if token == "track" and track["track"] == "None":
                 track["track"] = "Single"
@@ -151,11 +159,18 @@ class BandcampDownloader:
 
             path_meta = track_meta.copy()
 
-            if self.config.truncate_album > 0 and len(path_meta["album"]) > self.config.truncate_album:
-                path_meta["album"] = path_meta["album"][: self.config.truncate_album]
+            truncate_album: int = self.config.truncate_album
+            if truncate_album > 0 and len(path_meta["album"]) > truncate_album:
+                album_value = path_meta["album"]
+                assert isinstance(album_value, str)
+                path_meta["album"] = album_value[:truncate_album]
 
-            if self.config.truncate_track > 0 and len(path_meta["title"]) > self.config.truncate_track:
-                path_meta["title"] = path_meta["title"][: self.config.truncate_track]
+            truncate_track = self.config.truncate_track
+            assert isinstance(truncate_track, int)
+            if truncate_track > 0 and len(path_meta["title"]) > truncate_track:
+                title_value = path_meta["title"]
+                assert isinstance(title_value, str)
+                path_meta["title"] = title_value[:truncate_track]
 
             self.num_tracks = len(album.tracks)
             self.track_num = track_index + 1
@@ -174,11 +189,11 @@ class BandcampDownloader:
 
             self.logger.debug(" Current file:\n\t%s", filepath)
 
-            if album.art and not os.path.exists(dirname + "/cover.jpg"):
+            if album.art is not None and not os.path.exists(dirname + "/cover.jpg"):
                 try:
                     with open(dirname + "/cover.jpg", "wb") as f:
                         r = self.session.get(album.art, headers=self.headers)
-                        f.write(r.content)
+                        _ = f.write(r.content)
                     self.album_art = dirname + "/cover.jpg"
                 except Exception as e:
                     print(e)
@@ -189,7 +204,10 @@ class BandcampDownloader:
 
             while True:
                 try:
-                    r = self.session.get(track.download_url, headers=self.headers, stream=True)
+                    download_url = track.download_url
+                    if download_url is None:
+                        raise ValueError(f"download_url is None for {track.title}")
+                    r = self.session.get(download_url, headers=self.headers, stream=True)
                     file_length = int(r.headers.get("content-length", 0))
                     total = int(file_length / 100)
                     # If file exists and is still a tmp file skip downloading and encode
@@ -205,12 +223,12 @@ class BandcampDownloader:
                         break
                     with open(filepath, "wb") as f:
                         if file_length is None:
-                            f.write(r.content)
+                            _ = f.write(r.content)
                         else:
                             dl = 0
                             for data in r.iter_content(chunk_size=total):
                                 dl += len(data)
-                                f.write(data)
+                                _ = f.write(data)
                                 if not self.config.debug:
                                     done = int(50 * dl / file_length)
                                     print_clean(
@@ -243,12 +261,12 @@ class BandcampDownloader:
             os.remove(f"{self.config.base_dir}/{VERSION}.not.finished")
 
         # Remove album art image as it is embedded
-        if self.config.embed_art and hasattr(self, "album_art"):
+        if self.config.embed_art and self.album_art is not None:
             os.remove(self.album_art)
 
         return True
 
-    def write_id3_tags(self, filepath: str, meta: dict):
+    def write_id3_tags(self, filepath: str, meta: dict[str, Any]) -> None:
         """Write metadata to the MP3 file
 
         :param filepath: name of mp3 file
@@ -262,42 +280,61 @@ class BandcampDownloader:
             print_clean(f"\r({self.track_num}/{self.num_tracks}) [{'=' * 50}] :: Encoding: {filename}")
 
         audio = mp3.MP3(filepath)
-        audio.delete()
+        _ = audio.delete()
         audio["TIT2"] = id3._frames.TIT2(encoding=3, text=["title"])
-        audio["WOAF"] = id3._frames.WOAF(url=meta["url"])
-        audio.save(filename=None, v1=2)
+        url = meta["url"]
+        assert isinstance(url, str)
+        audio["WOAF"] = id3._frames.WOAF(url=url)
+        _ = audio.save(filename=None, v1=2)
 
         audio = mp3.MP3(filepath)
         if self.config.group and "label" in meta:
-            audio["TIT1"] = id3._frames.TIT1(encoding=3, text=meta["label"])
+            label: str = meta["label"] or ""
+            audio["TIT1"] = id3._frames.TIT1(encoding=3, text=label)
 
         if self.config.embed_lyrics:
-            audio["USLT"] = id3._frames.USLT(encoding=3, lang="eng", desc="", text=meta["lyrics"])
+            lyrics: str = meta["lyrics"] or ""
+            audio["USLT"] = id3._frames.USLT(encoding=3, lang="eng", desc="", text=lyrics)
 
-        if self.config.embed_art:
+        if self.config.embed_art and self.album_art is not None:
             with open(self.album_art, "rb") as cover_img:
                 cover_bytes = cover_img.read()
                 audio["APIC"] = id3._frames.APIC(encoding=3, mime="image/jpeg", type=3, desc="Cover", data=cover_bytes)
         if self.config.embed_genres:
-            audio["TCON"] = id3._frames.TCON(encoding=3, text=meta["genres"])
-        audio.save()
+            genres: str = meta["genres"] or ""
+            audio["TCON"] = id3._frames.TCON(encoding=3, text=genres)
+        _ = audio.save()
 
         audio = mp3.EasyMP3(filepath)
 
-        if meta["track"].isdigit():
-            audio["tracknumber"] = meta["track"]
+        track = meta["track"]
+        assert isinstance(track, str)
+        if track.isdigit():
+            audio["tracknumber"] = track
         else:
             audio["tracknumber"] = "1"
 
-        if meta["artist"] is not None:
-            audio["artist"] = meta["artist"]
+        artist = meta["artist"]
+        if artist is not None:
+            assert isinstance(artist, str)
+            audio["artist"] = artist
         else:
-            audio["artist"] = meta["albumartist"]
-        audio["title"] = meta["title"]
-        audio["albumartist"] = meta["albumartist"]
-        audio["album"] = meta["album"]
-        audio["date"] = meta["date"]
-        audio.save()
+            albumartist = meta["albumartist"]
+            assert isinstance(albumartist, str)
+            audio["artist"] = albumartist
+        title = meta["title"]
+        assert isinstance(title, str)
+        audio["title"] = title
+        albumartist = meta["albumartist"]
+        assert isinstance(albumartist, str)
+        audio["albumartist"] = albumartist
+        album = meta["album"]
+        assert isinstance(album, str)
+        audio["album"] = album
+        date = meta["date"]
+        assert isinstance(date, str)
+        audio["date"] = date
+        _ = audio.save()
 
         self.logger.debug(" Encoding process finished..")
         self.logger.debug(" Renaming:\n\t%s -to-> %s", filepath, filepath[:-4])

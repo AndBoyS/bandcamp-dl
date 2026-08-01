@@ -29,6 +29,15 @@ dependencies = [
 
 license = { text = "Unlicense" }
 
+[dependency-groups]
+dev = [
+    "pyrefly>=1.2.0",
+    "ruff>=0.14.14",
+    "types-requests>=2.32.0.20241016",
+    "types-toml>=0.10.8.20240310",
+]
+
+
 [project.scripts]
 bandcamp-dl = "bandcamp_dl.main:main"
 
@@ -71,5 +80,33 @@ ignore = [
   "PTH123", # open should be replaced by Path.open
 ]
 
-[dependency-groups]
-dev = ["ruff>=0.14.14", "ty>=0.0.13"]
+
+[tool.pyrefly]
+use-ignore-files = false
+enabled-ignores = ["type", "pyrefly", "ty"]
+output-format = "min-text"
+min-severity = "warn"
+preset = 'strict'
+
+[tool.pyrefly.errors]
+unannotated-return = true
+invalid-abstract-method = true
+unused-call-result = true
+empty-body = true
+missing-super-call = true
+unsupported-dynamic-base = true
+implicit-reexport = true
+unknown-argument-type = true
+unknown-attribute-type = true
+implicit-any-lambda = true
+untyped-function-decorator = true
+untyped-class-decorator = true
+unused-type-ignore = true
+no-any-return = true
+untyped-import = true
+open-unpacking = true
+not-required-key-access = true
+implicitly-defined-attribute = true
+implicit-any = true
+implicit-bool = true
+invalid-cast = true
