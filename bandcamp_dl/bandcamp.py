@@ -27,13 +27,10 @@ class SSLAdapter(HTTPAdapter):
         super().__init__(**kwargs)
 
     @override
-    def init_poolmanager(self, *args: Any, **kwargs: Any) -> PoolManager:
+    def init_poolmanager(self, connections: int, maxsize: int, block: bool = False, **pool_kwargs: Any) -> None:
+        kwargs = pool_kwargs
         kwargs["ssl_context"] = self.ssl_context
-        super().init_poolmanager(*args, **kwargs)
-        # requests' HTTPAdapter.init_poolmanager() sets self.poolmanager and returns None,
-        # so read the manager off the instance rather than the (empty) return value.
-        assert isinstance(self.poolmanager, PoolManager)
-        return self.poolmanager
+        super().init_poolmanager(connections=connections, maxsize=maxsize, block=block, **kwargs)
 
     @override
     def proxy_manager_for(self, *args: Any, **kwargs: Any) -> PoolManager:
