@@ -16,11 +16,10 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v7
         with:
-          version: "0.9.27"
-      - name: ty type checking
-        run: uv run ty check
+          version: "0.10.4"
+      - name: pyrefly type checking
+        run: uv run pyrefly check
       - name: Ruff linter
-        run: uv run ruff check --exclude
+        run: uv run ruff check
       - name: Ruff format
         run: uv run ruff format --check
-
