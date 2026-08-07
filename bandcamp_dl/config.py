@@ -56,7 +56,7 @@ class Track(GoodBaseModel):
     title: str
     duration: float
     track_id: int | None
-    track_num: int
+    track_num: int | None = None
     partial_url: str | None = None
     download_url: str | None = None
     artist: str | None = None
