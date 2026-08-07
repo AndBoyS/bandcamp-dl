@@ -12,7 +12,6 @@ classifiers = [
   'Development Status :: 4 - Beta',
   'Intended Audience :: End Users/Desktop',
   'Topic :: Multimedia :: Sound/Audio',
-  'License :: Public Domain',
   'Programming Language :: Python :: 3.8',
 ]
 dependencies = [
@@ -27,7 +26,8 @@ dependencies = [
   "urllib3 >= 2.2.2",
 ]
 
-license = { text = "Unlicense" }
+license = "Unlicense"
+license-files = ["UNLICENSE"]
 
 [dependency-groups]
 dev = [
@@ -42,7 +42,7 @@ dev = [
 bandcamp-dl = "bandcamp_dl.main:main"
 
 [build-system]
-requires = ["uv_build~=0.9.0"]
+requires = ["uv_build~=0.12.3"]
 build-backend = "uv_build"
 
 [tool.uv.build-backend]
