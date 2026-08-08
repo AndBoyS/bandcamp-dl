@@ -3,7 +3,6 @@ from __future__ import annotations
 import datetime
 import json
 import logging
-import ssl
 import sys
 from typing import Any
 from urllib.parse import urljoin
@@ -11,62 +10,14 @@ from urllib.parse import urljoin
 import bs4
 import requests
 from bs4.element import Tag
-from requests.adapters import HTTPAdapter
-from typing_extensions import override
-from urllib3 import PoolManager
-from urllib3.util import create_urllib3_context
 
-from bandcamp_dl.bandcampjson import BandcampJSON
+from bandcamp_dl.bandcampjson import extract_page_json
 from bandcamp_dl.config import Album, Track
 from bandcamp_dl.const import VERSION
+from bandcamp_dl.custom_ssl import CUSTOM_SSL_CTX, SSLAdapter
 
 
-class SSLAdapter(HTTPAdapter):
-    def __init__(self, ssl_context: ssl.SSLContext | None = None, **kwargs: Any) -> None:
-        self.ssl_context = ssl_context
-        super().__init__(**kwargs)
-
-    @override
-    def init_poolmanager(self, connections: int, maxsize: int, block: bool = False, **pool_kwargs: Any) -> None:
-        kwargs = pool_kwargs
-        kwargs["ssl_context"] = self.ssl_context
-        super().init_poolmanager(connections=connections, maxsize=maxsize, block=block, **kwargs)
-
-    @override
-    def proxy_manager_for(self, *args: Any, **kwargs: Any) -> PoolManager:
-        kwargs["ssl_context"] = self.ssl_context
-        result = super().proxy_manager_for(*args, **kwargs)
-        assert isinstance(result, PoolManager)
-        return result
-
-
-# Create the SSL context with the custom ciphers
-ctx = create_urllib3_context()
-ctx.load_default_certs()
-
-DEFAULT_CIPHERS = ":".join(
-    [
-        "ECDHE+AESGCM",
-        "ECDHE+CHACHA20",
-        "DHE+AESGCM",
-        "DHE+CHACHA20",
-        "ECDH+AESGCM",
-        "DH+AESGCM",
-        "ECDH+AES",
-        "DH+AES",
-        "RSA+AESGCM",
-        "RSA+AES",
-        "!aNULL",
-        "!eNULL",
-        "!MD5",
-        "!DSS",
-        "!AESCCM",
-    ]
-)
-ctx.set_ciphers(DEFAULT_CIPHERS)
-
-
-class Bandcamp:
+class BandcampParser:
     def __init__(self) -> None:
         # TODO: update version
         self.headers = {"User-Agent": f"bandcamp-dl/{VERSION} (https://github.com/evolution0/bandcamp-dl)"}
@@ -74,7 +25,7 @@ class Bandcamp:
 
         # Mount the adapter with the custom SSL context to the session
         self.session = requests.Session()
-        self.adapter = SSLAdapter(ssl_context=ctx)
+        self.adapter = SSLAdapter(ssl_context=CUSTOM_SSL_CTX)
         self.session.mount("https://", self.adapter)
 
     def parse(
@@ -111,7 +62,7 @@ class Bandcamp:
             soup = bs4.BeautifulSoup(response.text, "html.parser")
 
         self.logger.debug(" Generating BandcampJSON..")
-        bandcamp_json = BandcampJSON(soup).generate()
+        bandcamp_json = extract_page_json(soup)
         page_json: dict[str, Any] = {}
         for entry in bandcamp_json:
             page_json = {**page_json, **json.loads(entry)}

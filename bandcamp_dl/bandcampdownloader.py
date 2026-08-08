@@ -342,7 +342,7 @@ class BandcampDownloader:
         _ = audio.save()
 
         self.logger.debug(" Encoding process finished..")
-        self.logger.debug(" Renaming:\n\t%s -to-> %s", filepath, filepath[:-4])
+        self.logger.debug(f" Renaming:\n\t{filepath} -to-> {filepath[:-4]}")
 
         try:
             os.rename(filepath, filepath[:-4])
