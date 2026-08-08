@@ -21,14 +21,14 @@ Workflow
 Code
 ----
 
-- Try to adhere to PEP8 as best you can.
-
-  - allowed line code length for this project is up to 99 chars
-  - documentation line length is up to 72 chars
-
-- Annotate functions
-- Specify return types
-- Add docstrings
+- To get started, use `uv sync` to install dev environment
+  - If you don't know what uv is, check how uv projects work (`uv.lock`, `uv add`, `uv remove`, etc.) 
+- To verify everything is correct, run `uv run pyrefly check`, `uv run ruff check --fix`, `uv run ruff format`
+  - `pyrefly check`: runs static type analysis and is strict (annotations aren't optional)
+  - `ruff check`: for conventions and possible bugs 
+  - `ruff format`: for code formatting
+- If you are using VSCode, you will be prompted to install pyrefly and ruff extensions upon opening the repo since it's convenient. 
+  It's recommended to disable other lsps like Pylance so that the info you see in IDE is identical to what other devs and CI see ("python.languageServer": "None")
 
 *****
 
