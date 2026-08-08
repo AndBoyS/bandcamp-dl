@@ -5,8 +5,8 @@ import sys
 from pathlib import Path
 from urllib.parse import urlparse
 
-from bandcamp_dl.bandcamp import BandcampParser
-from bandcamp_dl.bandcampdownloader import BandcampDownloader
+from bandcamp_dl.bandcamp_downloader import BandcampDownloader
+from bandcamp_dl.bandcamp_parser import BandcampParser
 from bandcamp_dl.cli_parsing import parse_args, resolve_config
 from bandcamp_dl.config import Album, get_user_config
 from bandcamp_dl.const import VERSION

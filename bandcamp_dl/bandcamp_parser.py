@@ -11,7 +11,7 @@ import bs4
 import requests
 from bs4.element import Tag
 
-from bandcamp_dl.bandcampjson import extract_page_json
+from bandcamp_dl.bandcamp_json import extract_page_json
 from bandcamp_dl.config import Album, Track
 from bandcamp_dl.const import VERSION
 from bandcamp_dl.custom_ssl import CUSTOM_SSL_CTX, SSLAdapter
