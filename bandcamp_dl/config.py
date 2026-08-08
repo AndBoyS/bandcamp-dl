@@ -5,7 +5,7 @@ import os
 from enum import Enum
 from pathlib import Path
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
 
 TEMPLATE = "%{artist}/%{album}/%{track} - %{title}"
 OK_CHARS = "-_~"
@@ -63,6 +63,12 @@ class Config(GoodBaseModel):
     cover_quality: int = 0
     truncate_album: int = 0
     truncate_track: int = 0
+
+    @model_validator(mode="after")
+    def validate_art_options(self) -> Config:
+        if self.no_art and self.embed_art:
+            raise ValueError("no_art and embed_art cannot both be enabled")
+        return self
 
 
 class Track(GoodBaseModel):
