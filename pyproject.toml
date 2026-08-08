@@ -7,17 +7,16 @@ authors = [
 version = "0.0.18"
 description = "Add your description here"
 readme = "README.rst"
-requires-python = ">=3.8, <3.15"
+requires-python = ">=3.10, <3.15"
 classifiers = [
   'Development Status :: 4 - Beta',
   'Intended Audience :: End Users/Desktop',
   'Topic :: Multimedia :: Sound/Audio',
-  'Programming Language :: Python :: 3.8',
+  'Programming Language :: Python :: 3.10',
 ]
 dependencies = [
   "beautifulsoup4 >= 4.13.0b2",
   "demjson3 >= 3.0.6",
-  "eval-type-backport>=0.3.1",
   "mutagen >= 1.47.0",
   "pydantic>=2.10.6",
   "requests >= 2.32.3",
@@ -31,10 +30,10 @@ license-files = ["UNLICENSE"]
 
 [dependency-groups]
 dev = [
-    "pyrefly>=1.2.0",
-    "ruff>=0.14.14",
-    "types-requests>=2.32.0.20241016",
-    "types-toml>=0.10.8.20240310",
+  "pyrefly>=1.2.0",
+  "ruff>=0.14.14",
+  "types-requests>=2.32.0.20241016",
+  "types-toml>=0.10.8.20240310",
 ]
 
 

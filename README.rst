@@ -47,8 +47,7 @@ Description
 -----------
 
 bandcamp-dl is a small command-line app to download audio from
-bandcamp.com. It requires the Python interpreter, version 3.4 (or
-higher) and is not platform specific. It is released to the public
+bandcamp.com. It requires the Python interpreter, version 3.10-3.14 and is not platform specific. It is released to the public
 domain, which means you can modify it, redistribute it or use it how
 ever you like.
 
