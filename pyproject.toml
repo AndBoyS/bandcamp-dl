@@ -58,6 +58,7 @@ line-length = 120
 [tool.ruff.lint]
 select = [
   "E",    # pycodestyle
+  "W505", # Docstring line too long
   "F",    # Pyflakes
   "UP",   # pyupgrade
   "B",    # flake8-bugbear
