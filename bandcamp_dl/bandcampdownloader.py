@@ -4,14 +4,13 @@ import logging
 import os
 import re
 import shutil
-from argparse import Namespace
 from typing import Any
 
 import requests
 import slugify
 from mutagen import id3, mp3
 
-from bandcamp_dl.config import CASE_CAMEL, CASE_LOWER, CASE_UPPER, Album
+from bandcamp_dl.config import Album, CaseType, Config
 from bandcamp_dl.const import VERSION
 
 
@@ -21,7 +20,7 @@ def print_clean(msg: str) -> None:
 
 
 class BandcampDownloader:
-    def __init__(self, config: Namespace, urls: list[str] | None = None) -> None:
+    def __init__(self, config: Config, urls: list[str] | None = None) -> None:
         """Initialize variables we will need throughout the Class
 
         :param config: user config/args
@@ -54,7 +53,13 @@ class BandcampDownloader:
             _ = self.download_album(album)
 
     def template_to_path(
-        self, track: dict[str, Any], ascii_only: bool, ok_chars: str, space_char: str, keep_space: bool, case_mode: str
+        self,
+        track: dict[str, Any],
+        ascii_only: bool,
+        ok_chars: str,
+        space_char: str,
+        keep_space: bool,
+        case_mode: CaseType,
     ) -> str:
         """Create valid filepath based on template
 
@@ -71,10 +76,10 @@ class BandcampDownloader:
         self.logger.debug(f"\n\tTemplate: {template}")
 
         def slugify_preset(content: str) -> str:
-            retain_case = case_mode != CASE_LOWER
-            if case_mode == CASE_UPPER:
+            retain_case = case_mode != CaseType.LOWER
+            if case_mode == CaseType.UPPER:
                 content = content.upper()
-            if case_mode == CASE_CAMEL:
+            if case_mode == CaseType.CAMEL:
                 # pyrefly: ignore [implicit-any-lambda]
                 content = re.sub(r"(((?<=\s)|^|-)[a-z])", lambda x: x.group().upper(), content.lower())
             result = slugify.slugify(

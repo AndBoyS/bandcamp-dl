@@ -68,6 +68,7 @@ ctx.set_ciphers(DEFAULT_CIPHERS)
 
 class Bandcamp:
     def __init__(self) -> None:
+        # TODO: update version
         self.headers = {"User-Agent": f"bandcamp-dl/{VERSION} (https://github.com/evolution0/bandcamp-dl)"}
         self.logger = logging.getLogger("bandcamp-dl").getChild("Main")
 

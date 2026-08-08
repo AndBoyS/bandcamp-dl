@@ -2,24 +2,75 @@ from __future__ import annotations
 
 import argparse
 import logging
-import pathlib
 import sys
+from pathlib import Path
+from typing import Literal
 from urllib.parse import urlparse
 
-from bandcamp_dl import config
+import typed_argparse as tap
+
 from bandcamp_dl.bandcamp import Bandcamp
 from bandcamp_dl.bandcampdownloader import BandcampDownloader
-from bandcamp_dl.config import Album, get_user_config
+from bandcamp_dl.config import Album, CaseType, Config, get_user_config
 from bandcamp_dl.const import VERSION
 
 
-def main() -> None:
-    user_conf = get_user_config()
+class ConfigurableArgs(tap.TypedArgs):
+    # Stuff that can be taken from user config
+    debug: bool | None
+    template: str | None
+    base_dir: Path | None
+    overwrite: bool | None
+    no_art: bool | None
+    embed_lyrics: bool | None
+    group: bool | None
+    embed_art: bool | None
+    cover_quality: Literal[0, 10, 16] | None
+    untitled_path_from_slug: bool | None
+    no_slugify: bool | None
+    ok_chars: str | None
+    space_char: str | None
+    ascii_only: bool | None
+    keep_spaces: bool | None
+    case_mode: CaseType | None
+    no_confirm: bool | None
+    embed_genres: bool | None
+    truncate_album: int | None
+    truncate_track: int | None
 
+
+class CliOnlyArgs(tap.TypedArgs):
+    URL: list[str]
+    version: bool
+    full_album: bool
+    artist: str | None
+    track: str | None
+    album: str | None
+
+
+class AllCliArgs(ConfigurableArgs, CliOnlyArgs):
+    pass
+
+
+def add_boolean_argument(
+    parser: argparse.ArgumentParser,
+    dest: str,
+    *,
+    pos_flags: tuple[str, ...],
+    neg_flags: tuple[str, ...],
+    help: str,
+) -> None:
+    """In cli user can pass positive flag to enable or negative to disable a field (dest)"""
+    _ = parser.add_argument(*pos_flags, dest=dest, action="store_const", const=True, default=None, help=help)
+    _ = parser.add_argument(
+        *neg_flags, dest=dest, action="store_const", const=False, default=None, help=argparse.SUPPRESS
+    )
+
+
+def parse_args(raw_args: list[str] | None = None) -> tuple[argparse.ArgumentParser, AllCliArgs]:
     parser = argparse.ArgumentParser()
-    _ = parser.add_argument("URL", help="Bandcamp album/track URL", nargs="*")
+    _ = parser.add_argument("URL", nargs="*", help="Bandcamp album/track URL")
     _ = parser.add_argument("-v", "--version", action="store_true", help="Show version")
-    _ = parser.add_argument("-d", "--debug", action="store_true", help="Verbose logging", default=user_conf.debug)
     _ = parser.add_argument("--artist", help="Specify an artist's slug to download their full discography.")
     _ = parser.add_argument(
         "--track", help="Specify a track's slug to download a single track. Must be used with --artist."
@@ -27,127 +78,116 @@ def main() -> None:
     _ = parser.add_argument(
         "--album", help="Specify an album's slug to download a single album. Must be used with --artist."
     )
+    _ = parser.add_argument("--template", help="Output filename template")
+    _ = parser.add_argument("--base-dir", type=Path, help="Base location of which all files are downloaded")
+    _ = parser.add_argument("-f", "--full-album", action="store_true", help="Download only if all tracks are available")
+    _ = parser.add_argument("--cover-quality", type=int, choices=(0, 10, 16), help="Set the cover art quality")
+    _ = parser.add_argument("-c", "--ok-chars", help="Specify allowed chars in slugify")
+    _ = parser.add_argument("-s", "--space-char", help="Specify the char to use in place of spaces")
     _ = parser.add_argument(
-        "--template",
-        help=f"Output filename template, default: {user_conf.template.replace('%', '%%')}",
-        default=user_conf.template,
+        "-x", "--case-convert", dest="case_mode", type=CaseType, help="Specify the char case conversion logic"
     )
-    _ = parser.add_argument(
-        "--base-dir", help="Base location of which all files are downloaded", default=user_conf.base_dir
+    _ = parser.add_argument("--truncate-album", type=int, metavar="LENGTH", help="Truncate album title; 0 for no limit")
+    _ = parser.add_argument("--truncate-track", type=int, metavar="LENGTH", help="Truncate track title; 0 for no limit")
+    add_boolean_argument(
+        parser, "debug", pos_flags=("-d", "--debug"), neg_flags=("--no-debug",), help="Verbose logging"
     )
-    _ = parser.add_argument("-f", "--full-album", help="Download only if all tracks are available", action="store_true")
-    _ = parser.add_argument(
-        "-o",
-        "--overwrite",
-        action="store_true",
-        help=f"Overwrite tracks that already exist. Default is {user_conf.overwrite}.",
-        default=user_conf.overwrite,
+    add_boolean_argument(
+        parser,
+        "overwrite",
+        pos_flags=("-o", "--overwrite"),
+        neg_flags=("--no-overwrite",),
+        help="Overwrite tracks that already exist",
     )
-    _ = parser.add_argument(
-        "-n", "--no-art", help="Skip grabbing album art", action="store_true", default=user_conf.no_art
+    add_boolean_argument(
+        parser, "no_art", pos_flags=("-n", "--no-art"), neg_flags=("--art",), help="Skip grabbing album art"
     )
-    _ = parser.add_argument(
-        "-e",
-        "--embed-lyrics",
+    add_boolean_argument(
+        parser,
+        "embed_lyrics",
+        pos_flags=("-e", "--embed-lyrics"),
+        neg_flags=("--no-embed-lyrics",),
         help="Embed track lyrics (If available)",
-        action="store_true",
-        default=user_conf.embed_lyrics,
     )
-    _ = parser.add_argument(
-        "-g",
-        "--group",
+    add_boolean_argument(
+        parser,
+        "group",
+        pos_flags=("-g", "--group"),
+        neg_flags=("--no-group",),
         help="Use album/track Label as iTunes grouping",
-        action="store_true",
-        default=user_conf.group,
     )
-    _ = parser.add_argument(
-        "-r", "--embed-art", help="Embed album art (If available)", action="store_true", default=user_conf.embed_art
+    add_boolean_argument(
+        parser,
+        "embed_art",
+        pos_flags=("-r", "--embed-art"),
+        neg_flags=("--no-embed-art",),
+        help="Embed album art (If available)",
     )
-    _ = parser.add_argument(
-        "--cover-quality",
-        help="Set the cover art quality. 0 is source, 10 is album page (1200x1200), 16 is default embed (700x700).",
-        default=user_conf.cover_quality,
-        type=int,
-        choices=[0, 10, 16],
+    add_boolean_argument(
+        parser,
+        "untitled_path_from_slug",
+        pos_flags=("--untitled-path-from-slug",),
+        neg_flags=("--no-untitled-path-from-slug",),
+        help="Use the URL slug for untitled album paths",
     )
-    _ = parser.add_argument(
-        "--untitled-path-from-slug",
-        help="For albums titled untitled, use the URL slug to generate the folder path.",
-        action="store_true",
-        default=user_conf.untitled_path_from_slug,
-    )
-    _ = parser.add_argument(
-        "-y",
-        "--no-slugify",
-        action="store_true",
-        default=user_conf.no_slugify,
+    add_boolean_argument(
+        parser,
+        "no_slugify",
+        pos_flags=("-y", "--no-slugify"),
+        neg_flags=("--slugify",),
         help="Disable slugification of track, album, and artist names",
     )
-    _ = parser.add_argument(
-        "-c",
-        "--ok-chars",
-        default=user_conf.ok_chars,
-        help=f"Specify allowed chars in slugify, default: {user_conf.ok_chars}",
+    add_boolean_argument(
+        parser,
+        "ascii_only",
+        pos_flags=("-a", "--ascii-only"),
+        neg_flags=("--no-ascii-only",),
+        help="Only allow ASCII chars",
     )
-    _ = parser.add_argument(
-        "-s",
-        "--space-char",
-        help=f"Specify the char to use in place of spaces, default: {user_conf.space_char}",
-        default=user_conf.space_char,
-    )
-    _ = parser.add_argument(
-        "-a",
-        "--ascii-only",
-        help="Only allow ASCII chars (北京 (capital of china) -> bei-jing-capital-of-china)",
-        action="store_true",
-        default=user_conf.ascii_only,
-    )
-    _ = parser.add_argument(
-        "-k",
-        "--keep-spaces",
+    add_boolean_argument(
+        parser,
+        "keep_spaces",
+        pos_flags=("-k", "--keep-spaces"),
+        neg_flags=("--no-keep-spaces",),
         help="Retain whitespace in filenames",
-        action="store_true",
-        default=user_conf.keep_spaces,
     )
-    _ = parser.add_argument(
-        "-x",
-        "--case-convert",
-        help=f"Specify the char case conversion logic, default: {user_conf.case_mode}",
-        default=user_conf.case_mode,
-        dest="case_mode",
-        choices=[config.CASE_LOWER, config.CASE_UPPER, config.CASE_CAMEL, config.CASE_NONE],
-    )
-    _ = parser.add_argument(
-        "--no-confirm",
+    add_boolean_argument(
+        parser,
+        "no_confirm",
+        pos_flags=("--no-confirm",),
+        neg_flags=("--confirm",),
         help="Override confirmation prompts. Use with caution",
-        action="store_true",
-        default=user_conf.no_confirm,
     )
-    _ = parser.add_argument(
-        "--embed-genres", help="Embed album/track genres", action="store_true", default=user_conf.embed_genres
+    add_boolean_argument(
+        parser,
+        "embed_genres",
+        pos_flags=("--embed-genres",),
+        neg_flags=("--no-embed-genres",),
+        help="Embed album/track genres",
     )
-    _ = parser.add_argument(
-        "--truncate-album",
-        metavar="LENGTH",
-        type=int,
-        default=0,
-        help="Truncate album title to a maximum length. 0 for no limit.",
-    )
-    _ = parser.add_argument(
-        "--truncate-track",
-        metavar="LENGTH",
-        type=int,
-        default=0,
-        help="Truncate track title to a maximum length. 0 for no limit.",
-    )
+    return parser, AllCliArgs.from_argparse(parser.parse_args(raw_args), disallow_extra_args=True)
 
-    arguments = parser.parse_args()
+
+def resolve_config(user_config: Config, args: ConfigurableArgs) -> Config:
+    attrs = Config().model_dump()
+    cfg_set_attrs = {k: getattr(user_config, k) for k in user_config.model_fields_set}
+    cli_set_attrs = {k: getattr(args, k) for k in ConfigurableArgs.__annotations__ if getattr(args, k) is not None}
+    attrs.update(cfg_set_attrs)
+    attrs.update(cli_set_attrs)
+    return Config.model_validate(attrs)
+
+
+def main() -> None:
+    parser, arguments = parse_args()
+    user_conf = get_user_config()
 
     if arguments.version:
         _ = sys.stdout.write(f"bandcamp-dl {VERSION}\n")
         return
 
-    if arguments.debug:
+    actual_config = resolve_config(user_conf, arguments)
+
+    if actual_config.debug:
         logging.basicConfig(level=logging.DEBUG)
     else:
         logging.basicConfig()
@@ -155,31 +195,22 @@ def main() -> None:
     logger = logging.getLogger(logging_handle)
 
     # TODO: Its possible to break bandcamp-dl temporarily by simply erasing a line in the config, catch this and warn.
-    logger.debug(f"Config/Args: {arguments}")
-    if not arguments.URL and not arguments.artist:
+    logger.debug("Config/Args: %s", actual_config)
+    if not bool(arguments.URL) and not bool(arguments.artist):
         parser.print_usage()
         _ = sys.stderr.write(
-            f"{pathlib.Path(sys.argv[0]).name}: error: the following arguments are required: URL or --artist\n"
+            f"{Path(sys.argv[0]).name}: error: the following arguments are required: URL or --artist\n"
         )
         sys.exit(2)
-
-    for arg, val in [
-        ("base_dir", config.USER_HOME),
-        ("template", config.TEMPLATE),
-        ("ok_chars", config.OK_CHARS),
-        ("space_char", config.SPACE_CHAR),
-    ]:
-        if not getattr(arguments, arg):
-            setattr(arguments, arg, val)
 
     bandcamp = Bandcamp()
 
     urls: list[str]
-    if arguments.artist and arguments.album:
+    if arguments.artist is not None and arguments.album is not None:
         urls = [Bandcamp.generate_album_url(arguments.artist, arguments.album, "album")]
-    elif arguments.artist and arguments.track:
+    elif arguments.artist is not None and arguments.track is not None:
         urls = [Bandcamp.generate_album_url(arguments.artist, arguments.track, "track")]
-    elif arguments.artist:
+    elif arguments.artist is not None:
         urls = Bandcamp.get_full_discography(bandcamp, arguments.artist, "music")
     else:
         urls = []
@@ -201,10 +232,10 @@ def main() -> None:
         logger.debug("\n\tURL: %s", url)
         album = bandcamp.parse(
             url,
-            add_art=not arguments.no_art,
-            add_lyrics=arguments.embed_lyrics,
-            add_genres=arguments.embed_genres,
-            cover_quality=arguments.cover_quality,
+            add_art=not actual_config.no_art,
+            add_lyrics=actual_config.embed_lyrics,
+            add_genres=actual_config.embed_genres,
+            cover_quality=actual_config.cover_quality,
         )
         if album is not None:
             logger.debug(f" Album data:\n\t{album}")
@@ -214,10 +245,10 @@ def main() -> None:
             else:
                 album_list.append(album)
 
-    if arguments.URL or arguments.artist:
+    if bool(arguments.URL) or arguments.artist is not None:
         logger.debug("Preparing download process..")
         for album in album_list:
-            bandcamp_downloader = BandcampDownloader(arguments, [album.url])
+            bandcamp_downloader = BandcampDownloader(actual_config, [album.url])
             logger.debug("Initiating download process..")
             bandcamp_downloader.start(album)
             # Add a newline to stop prompt mangling

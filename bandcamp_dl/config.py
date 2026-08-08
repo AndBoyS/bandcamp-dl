@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+from enum import Enum
 from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict
@@ -9,10 +10,22 @@ from pydantic import BaseModel, ConfigDict
 TEMPLATE = "%{artist}/%{album}/%{track} - %{title}"
 OK_CHARS = "-_~"
 SPACE_CHAR = "-"
-CASE_LOWER = "lower"
-CASE_UPPER = "upper"
-CASE_CAMEL = "camel"
-CASE_NONE = "none"
+
+
+class CaseType(Enum):
+    LOWER = "lower"
+    UPPER = "upper"
+    CAMEL = "camel"
+    NONE = "none"
+
+    # On python3.11 can move to StrEnum
+    def __repr__(self) -> str:
+        return str(self.value)
+
+    def __str__(self) -> str:
+        return repr(self)
+
+
 USER_HOME = Path.home()
 # For Linux/BSD https://www.freedesktop.org/wiki/Software/xdg-user-dirs/
 # For Windows ans MacOS .appname is fine
@@ -40,7 +53,7 @@ class Config(GoodBaseModel):
     no_slugify: bool = False
     ok_chars: str = OK_CHARS
     space_char: str = SPACE_CHAR
-    case_mode: str = CASE_LOWER
+    case_mode: CaseType = CaseType.LOWER
     ascii_only: bool = False
     keep_spaces: bool = False
     no_confirm: bool = False
