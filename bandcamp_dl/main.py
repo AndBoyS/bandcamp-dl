@@ -11,6 +11,8 @@ from bandcamp_dl.cli_parsing import parse_args, resolve_config
 from bandcamp_dl.config import Album, get_user_config
 from bandcamp_dl.const import VERSION
 
+logger = logging.getLogger(__name__)
+
 
 def main() -> None:
     parser, arguments = parse_args()
@@ -26,11 +28,8 @@ def main() -> None:
         logging.basicConfig(level=logging.DEBUG)
     else:
         logging.basicConfig()
-    logging_handle = "bandcamp-dl"
-    logger = logging.getLogger(logging_handle)
-
     # TODO: Its possible to break bandcamp-dl temporarily by simply erasing a line in the config, catch this and warn.
-    logger.debug("Config/Args: %s", actual_config)
+    logger.debug(f"Config/Args: {actual_config}")
     if not bool(arguments.URL) and not bool(arguments.artist):
         parser.print_usage()
         _ = sys.stderr.write(
@@ -64,7 +63,7 @@ def main() -> None:
     for url in urls:
         if "/album/" not in url and "/track/" not in url:
             continue
-        logger.debug("\n\tURL: %s", url)
+        logger.debug(f"\n\tURL: {url}")
         album = bandcamp_parser.parse(
             url,
             add_art=not actual_config.no_art,

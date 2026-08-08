@@ -13,6 +13,8 @@ from mutagen import id3, mp3
 from bandcamp_dl.config import Album, CaseType, Config
 from bandcamp_dl.const import VERSION
 
+logger = logging.getLogger(__name__)
+
 
 def print_clean(msg: str) -> None:
     terminal_size = shutil.get_terminal_size()
@@ -28,7 +30,6 @@ class BandcampDownloader:
         """
         self.headers = {"User-Agent": f"bandcamp-dl/{VERSION} (https://github.com/evolution0/bandcamp-dl)"}
         self.session = requests.Session()
-        self.logger = logging.getLogger("bandcamp-dl").getChild("Downloader")
         self.config = config
         self.urls = urls
         self.album_art: str | None = None
@@ -71,9 +72,9 @@ class BandcampDownloader:
         :param space_char: char to use in place of spaces
         :return: filepath
         """
-        self.logger.debug(" Generating filepath/trackname..")
+        logger.debug(" Generating filepath/trackname..")
         template: str = self.config.template
-        self.logger.debug(f"\n\tTemplate: {template}")
+        logger.debug(f"\n\tTemplate: {template}")
 
         def slugify_preset(content: str) -> str:
             retain_case = case_mode != CaseType.LOWER
@@ -102,7 +103,7 @@ class BandcampDownloader:
                 key = "albumartist"
 
             if key == "artist" and track.get("artist") is None:
-                self.logger.debug("Track artist is None, replacing with album artist")
+                logger.debug("Track artist is None, replacing with album artist")
                 track["artist"] = track.get("albumartist")
 
             if self.config.untitled_path_from_slug and token == "album" and track["album"].lower() == "untitled":
@@ -121,8 +122,8 @@ class BandcampDownloader:
 
         output = f"{self.config.base_dir}/{template}.mp3" if self.config.base_dir is not None else f"{template}.mp3"
 
-        self.logger.debug(" filepath/trackname generated..")
-        self.logger.debug(f"\n\tPath: {output}")
+        logger.debug(" filepath/trackname generated..")
+        logger.debug(f"\n\tPath: {output}")
         return output
 
     def create_directory(self, filename: str) -> str:
@@ -132,8 +133,8 @@ class BandcampDownloader:
         :return: directory path
         """
         directory = os.path.dirname(filename)
-        self.logger.debug(f" Directory:\n\t{directory}")
-        self.logger.debug(" Directory doesn't exist, creating..")
+        logger.debug(f" Directory:\n\t{directory}")
+        logger.debug(" Directory doesn't exist, creating..")
         if not os.path.exists(directory):
             os.makedirs(directory)
 
@@ -192,7 +193,7 @@ class BandcampDownloader:
             filename = filepath.rsplit("/", 1)[1]
             dirname = self.create_directory(filepath)
 
-            self.logger.debug(" Current file:\n\t%s", filepath)
+            logger.debug(f" Current file:\n\t{filepath}")
 
             if album.art is not None and not os.path.exists(dirname + "/cover.jpg"):
                 try:
@@ -200,8 +201,8 @@ class BandcampDownloader:
                         r = self.session.get(album.art, headers=self.headers)
                         _ = f.write(r.content)
                     self.album_art = dirname + "/cover.jpg"
-                except Exception as e:
-                    print(e)
+                except Exception:
+                    logger.exception("Couldn't download album art")
                     print("Couldn't download album art.")
 
             attempts = 0
@@ -255,8 +256,8 @@ class BandcampDownloader:
                         break
                     # if all is well continue the download process for the rest of the tracks
                     break
-                except Exception as e:
-                    print(e)
+                except Exception:
+                    logger.exception("Downloading failed")
                     print("Downloading failed..")
                     return False
             if skip is False:
@@ -277,7 +278,7 @@ class BandcampDownloader:
         :param filepath: name of mp3 file
         :param meta: dict of track metadata
         """
-        self.logger.debug(" Encoding process starting..")
+        logger.debug(" Encoding process starting..")
 
         filename = filepath.rsplit("/", 1)[1][:-8]
 
@@ -341,8 +342,8 @@ class BandcampDownloader:
         audio["date"] = date
         _ = audio.save()
 
-        self.logger.debug(" Encoding process finished..")
-        self.logger.debug(f" Renaming:\n\t{filepath} -to-> {filepath[:-4]}")
+        logger.debug(" Encoding process finished..")
+        logger.debug(f" Renaming:\n\t{filepath} -to-> {filepath[:-4]}")
 
         try:
             os.rename(filepath, filepath[:-4])

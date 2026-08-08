@@ -5,7 +5,7 @@ import logging
 import demjson3
 from bs4 import BeautifulSoup
 
-logger = logging.getLogger("bandcamp-dl").getChild("JSON")
+logger = logging.getLogger(__name__)
 
 
 def extract_page_json(body: BeautifulSoup) -> list[str]:
