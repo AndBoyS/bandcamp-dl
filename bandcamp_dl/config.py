@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-import json
 import os
 from enum import Enum
 from pathlib import Path
 
+import toml
 from pydantic import BaseModel, ConfigDict, model_validator
 
 TEMPLATE = "%{artist}/%{album}/%{track} - %{title}"
@@ -29,7 +29,7 @@ class CaseType(Enum):
 USER_HOME = Path.home()
 # For Linux/BSD https://www.freedesktop.org/wiki/Software/xdg-user-dirs/
 # For Windows ans MacOS .appname is fine
-CONFIG_PATH = USER_HOME / (".config" if os.name == "posix" else ".bandcamp-dl") / "bandcamp-dl.json"
+CONFIG_PATH = USER_HOME / (".config" if os.name == "posix" else ".bandcamp-dl") / "bandcamp-dl.toml"
 
 
 class GoodBaseModel(BaseModel):
@@ -102,6 +102,6 @@ class Album(GoodBaseModel):
 def get_user_config() -> Config:
     if CONFIG_PATH.exists():
         with CONFIG_PATH.open() as f:
-            json_config = json.load(f)
-        return Config(**json_config)
+            toml_config = toml.load(f)
+        return Config(**toml_config)
     return Config()
