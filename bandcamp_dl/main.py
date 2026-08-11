@@ -79,16 +79,13 @@ def main() -> None:
             else:
                 album_list.append(album)
 
-    if bool(arguments.URL) or arguments.artist is not None:
-        logger.debug(f"Preparing download process for {len(album_list)} album(s)..")
-        for album in album_list:
-            bandcamp_downloader = BandcampDownloader(actual_config, [album.url])
-            logger.debug(f"Initiating download process for album '{album.title}'..")
-            bandcamp_downloader.start(album)
-            # Add a newline to stop prompt mangling
-            print()
-    else:
-        logger.debug(r" /!\ Something went horribly wrong /!\ ")
+    logger.debug(f"Preparing download process for {len(album_list)} album(s)..")
+    for album in album_list:
+        bandcamp_downloader = BandcampDownloader(actual_config, [album.url])
+        logger.debug(f"Initiating download process for album '{album.title}'..")
+        bandcamp_downloader.start(album)
+        # Add a newline to stop prompt mangling
+        print()
 
 
 if __name__ == "__main__":
