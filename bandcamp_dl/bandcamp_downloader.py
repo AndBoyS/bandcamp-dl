@@ -242,6 +242,7 @@ class BandcampDownloader:
                     local_size = os.path.getsize(filepath)
                     # if the local filesize before encoding doesn't match the remote filesize
                     # redownload
+                    # TODO max retries in config
                     if local_size != file_length and attempts != 3:  # noqa: PLR2004
                         print(f"{filename} is incomplete, retrying..")
                         continue
