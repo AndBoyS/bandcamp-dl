@@ -83,7 +83,7 @@ class BandcampDownloader:
             if case_mode == CaseType.CAMEL:
                 # pyrefly: ignore [implicit-any-lambda]
                 content = re.sub(r"(((?<=\s)|^|-)[a-z])", lambda x: x.group().upper(), content.lower())
-            result = slugify.slugify(
+            return slugify.slugify(
                 content,
                 ok=ok_chars,
                 only_ascii=ascii_only,
@@ -91,8 +91,6 @@ class BandcampDownloader:
                 lower=not retain_case,
                 space_replacement=space_char,
             )
-            assert isinstance(result, str)
-            return result
 
         template_tokens = ["trackartist", "artist", "album", "title", "date", "label", "track", "album_id", "track_id"]
         for token in template_tokens:
@@ -172,7 +170,6 @@ class BandcampDownloader:
                 path_meta["album"] = album_value[:truncate_album]
 
             truncate_track = self.config.truncate_track
-            assert isinstance(truncate_track, int)
             if truncate_track > 0 and len(path_meta["title"]) > truncate_track:
                 title_value = path_meta["title"]
                 assert isinstance(title_value, str)

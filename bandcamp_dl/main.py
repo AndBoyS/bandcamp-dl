@@ -48,7 +48,6 @@ def main() -> None:
     else:
         urls = []
         for url in arguments.URL:
-            assert isinstance(url, str)
             parsed_url = urlparse(url)
             if parsed_url.netloc.endswith(".bandcamp.com") and (parsed_url.path in {"/music", "/", ""}):
                 artist = parsed_url.netloc.split(".")[0]
