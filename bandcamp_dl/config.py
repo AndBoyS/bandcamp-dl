@@ -30,8 +30,6 @@ USER_HOME = Path.home()
 # For Linux/BSD https://www.freedesktop.org/wiki/Software/xdg-user-dirs/
 # For Windows ans MacOS .appname is fine
 CONFIG_PATH = USER_HOME / (".config" if os.name == "posix" else ".bandcamp-dl") / "bandcamp-dl.json"
-OPTION_MIGRATION_FORWARD = "forward"
-OPTION_MIGRATION_REVERSE = "reverse"
 
 
 class GoodBaseModel(BaseModel):
