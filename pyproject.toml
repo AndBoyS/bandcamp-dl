@@ -1,3 +1,6 @@
+exclude-newer = "7 days"
+exclude-newer-package = { pyrefly = false }
+
 [project]
 name = "bandcamp-downloader"
 authors = [
