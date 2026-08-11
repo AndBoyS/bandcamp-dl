@@ -28,8 +28,6 @@ def main() -> None:
         logging.basicConfig(level=logging.DEBUG)
     else:
         logging.basicConfig()
-    # TODO: Its possible to break bandcamp-dl temporarily by simply erasing a line in the config,
-    # catch this and warn.
     logger.debug(f"Config/Args: {actual_config}")
     if not bool(arguments.URL) and not bool(arguments.artist):
         parser.print_usage()
