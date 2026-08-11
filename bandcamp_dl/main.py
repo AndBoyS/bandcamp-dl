@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 import sys
 from pathlib import Path
@@ -28,7 +29,8 @@ def main() -> None:
         logging.basicConfig(level=logging.DEBUG)
     else:
         logging.basicConfig()
-    logger.debug(f"Config/Args: {actual_config}")
+    logger.debug(f"Config/args: {json.dumps(vars(arguments), indent=4)}")
+    logger.debug(f"Config after merging with user's config: {actual_config.model_dump_json(indent=4)}")
     if not bool(arguments.URL) and not bool(arguments.artist):
         parser.print_usage()
         _ = sys.stderr.write(
@@ -78,10 +80,10 @@ def main() -> None:
                 album_list.append(album)
 
     if bool(arguments.URL) or arguments.artist is not None:
-        logger.debug("Preparing download process..")
+        logger.debug(f"Preparing download process for {len(album_list)} album(s)..")
         for album in album_list:
             bandcamp_downloader = BandcampDownloader(actual_config, [album.url])
-            logger.debug("Initiating download process..")
+            logger.debug(f"Initiating download process for album '{album.title}'..")
             bandcamp_downloader.start(album)
             # Add a newline to stop prompt mangling
             print()

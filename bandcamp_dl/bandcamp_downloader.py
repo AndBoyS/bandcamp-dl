@@ -72,7 +72,8 @@ class BandcampDownloader:
         :param space_char: char to use in place of spaces
         :return: filepath
         """
-        logger.debug(" Generating filepath/trackname..")
+        debug_title = track.get("title", "(no title)")
+        logger.debug(f" Generating filepath/trackname for '{debug_title}'..")
         template: str = self.config.template
         logger.debug(f"\n\tTemplate: {template}")
 
@@ -101,8 +102,10 @@ class BandcampDownloader:
                 key = "albumartist"
 
             if key == "artist" and track.get("artist") is None:
-                logger.debug("Track artist is None, replacing with album artist")
                 track["artist"] = track.get("albumartist")
+                logger.debug(
+                    f"Track artist is None for '{debug_title}', replacing with album artist ({track['artist']})"
+                )
 
             if self.config.untitled_path_from_slug and token == "album" and track["album"].lower() == "untitled":
                 url = track["url"]
@@ -120,7 +123,7 @@ class BandcampDownloader:
 
         output = f"{self.config.base_dir}/{template}.mp3" if self.config.base_dir is not None else f"{template}.mp3"
 
-        logger.debug(" filepath/trackname generated..")
+        logger.debug(f" filepath/trackname generated for '{debug_title}'..")
         logger.debug(f"\n\tPath: {output}")
         return output
 
@@ -132,7 +135,7 @@ class BandcampDownloader:
         """
         directory = os.path.dirname(filename)
         logger.debug(f" Directory:\n\t{directory}")
-        logger.debug(" Directory doesn't exist, creating..")
+        logger.debug(f" Directory doesn't exist for {filename}, creating..")
         if not os.path.exists(directory):
             os.makedirs(directory)
 
@@ -190,7 +193,7 @@ class BandcampDownloader:
             filename = filepath.rsplit("/", 1)[1]
             dirname = self.create_directory(filepath)
 
-            logger.debug(f" Current file:\n\t{filepath}")
+            logger.debug(f" Current file for track '{track.title}' on album '{album.title}':\n\t{filepath}")
 
             if album.art is not None and not os.path.exists(dirname + "/cover.jpg"):
                 try:
@@ -199,7 +202,7 @@ class BandcampDownloader:
                         _ = f.write(r.content)
                     self.album_art = dirname + "/cover.jpg"
                 except Exception:
-                    logger.exception("Couldn't download album art")
+                    logger.exception(f"Couldn't download album art for track '{track.title}' on album '{album.title}'")
                     print("Couldn't download album art.")
 
             attempts = 0
@@ -255,7 +258,7 @@ class BandcampDownloader:
                     # if all is well continue the download process for the rest of the tracks
                     break
                 except Exception:
-                    logger.exception("Downloading failed")
+                    logger.exception(f"Downloading failed for track '{track.title}' on album '{album.title}'")
                     print("Downloading failed..")
                     return False
             if skip is False:
@@ -276,7 +279,9 @@ class BandcampDownloader:
         :param filepath: name of mp3 file
         :param meta: dict of track metadata
         """
-        logger.debug(" Encoding process starting..")
+        title = meta["title"]
+        assert isinstance(title, str)
+        logger.debug(f" Encoding process starting for '{title}'..")
 
         filename = filepath.rsplit("/", 1)[1][:-8]
 
@@ -326,8 +331,6 @@ class BandcampDownloader:
             albumartist = meta["albumartist"]
             assert isinstance(albumartist, str)
             audio["artist"] = albumartist
-        title = meta["title"]
-        assert isinstance(title, str)
         audio["title"] = title
         albumartist = meta["albumartist"]
         assert isinstance(albumartist, str)
@@ -340,12 +343,13 @@ class BandcampDownloader:
         audio["date"] = date
         _ = audio.save()
 
-        logger.debug(" Encoding process finished..")
+        logger.debug(f" Encoding process finished for '{title}'..")
         logger.debug(f" Renaming:\n\t{filepath} -to-> {filepath[:-4]}")
 
         try:
             os.rename(filepath, filepath[:-4])
         except OSError:
+            logger.warning(f"Output file already exists, replacing it: {filepath[:-4]}")
             os.remove(filepath[:-4])
             os.rename(filepath, filepath[:-4])
 

@@ -47,19 +47,22 @@ class BandcampParser:
         :return: album metadata
         """
 
+        logger.debug(f" Starting to parse {url}")
         try:
             response = self.session.get(url, headers=self.headers)
         except requests.exceptions.MissingSchema:
+            logger.warning(f"Invalid URL schema: {url}")
             return None
 
         if not response.ok:
-            logger.debug(f" Status code: {response.status_code}")
+            logger.error(f"Could not fetch {url}; status code: {response.status_code} ({response.reason})")
             print(f"The Album/Track requested does not exist at: {url}")
             sys.exit(2)
 
         try:
             soup = bs4.BeautifulSoup(response.text, "lxml")
         except bs4.FeatureNotFound:
+            logger.debug("lxml parser unavailable, falling back to html.parser")
             soup = bs4.BeautifulSoup(response.text, "html.parser")
 
         logger.debug(" Generating BandcampJSON..")
@@ -123,10 +126,12 @@ class BandcampParser:
             album_title: str = page_json["current"]["title"]
         except KeyError:
             album_title = page_json["trackinfo"][0]["title"]
+            logger.debug(f"Album title missing from current metadata, using track title ({album_title})")
 
         try:
             label: str | None = page_json["item_sellers"][f"{page_json['current']['selling_band_id']}"]["name"]
         except KeyError:
+            logger.debug(f"Label missing from page metadata ({url})")
             label = None
 
         album_id: int | None = None
@@ -176,20 +181,22 @@ class BandcampParser:
             genres="; ".join(page_json["keywords"]) if add_genres else None,
             album_id=album_id,
         )
+        if add_art and album.art is None:
+            logger.exception(f"Could not find album art for {album_title}")
 
-        logger.debug(" Album generated..")
-        logger.debug(f" Album URL: {album.url}")
+        logger.debug(f" Album generated: '{album.title}' ({album.url})..")
 
         return album
 
     def get_track_lyrics(self, track_url: str) -> str:
         lyrics_url = f"{track_url}#lyrics"
 
-        logger.debug(" Fetching track lyrics..")
+        logger.debug(f" Fetching track lyrics for {track_url}..")
         track_page = self.session.get(lyrics_url, headers=self.headers)
         try:
             track_soup = bs4.BeautifulSoup(track_page.text, "lxml")
         except bs4.FeatureNotFound:
+            logger.debug("lxml parser unavailable, falling back to html.parser")
             track_soup = bs4.BeautifulSoup(track_page.text, "html.parser")
         track_lyrics = track_soup.find("div", {"class": "lyricsText"})
         if track_lyrics is not None:
@@ -199,7 +206,7 @@ class BandcampParser:
         return ""
 
     def parse_track(self, track_raw: dict[str, Any]) -> Track:
-        logger.debug(" Generating track metadata..")
+        logger.debug(f" Generating track metadata for '{track_raw['title']}'..")
         track = Track(
             duration=track_raw["duration"],
             track_num=track_raw["track_num"],
@@ -219,7 +226,7 @@ class BandcampParser:
         if track_raw["has_lyrics"] is not False and track_raw["lyrics"] is not None:
             track.lyrics = track_raw["lyrics"].replace("\\r\\n", "\n")
 
-        logger.debug(" Track metadata generated..")
+        logger.debug(f" Track metadata generated for '{track.title}'..")
         return track
 
     @staticmethod
@@ -265,11 +272,12 @@ class BandcampParser:
         try:
             soup = bs4.BeautifulSoup(response.text, "lxml")
         except bs4.FeatureNotFound:
+            logger.debug("lxml parser unavailable, falling back to html.parser")
             soup = bs4.BeautifulSoup(response.text, "html.parser")
 
         music_grid = soup.find("ol", {"id": "music-grid"})
         if music_grid is None:
-            logger.warning("Could not find music grid on the page. No albums found.")
+            logger.warning(f"Could not find music grid on {music_page_url}. No albums found.")
             return []
 
         if "data-client-items" in music_grid.attrs:
@@ -286,7 +294,7 @@ class BandcampParser:
                         full_url = urljoin(music_page_url, page_url)
                         album_urls.add(full_url)
             except (json.JSONDecodeError, TypeError):
-                logger.exception("Failed to parse data-client-items JSON")
+                logger.exception(f"Failed to parse data-client-items JSON from {music_page_url}")
 
         logger.debug("Scraping all <li> elements in the music grid for links.")
         for a in music_grid.select("li.music-grid-item a"):
