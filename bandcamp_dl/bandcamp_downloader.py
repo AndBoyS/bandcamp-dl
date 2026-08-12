@@ -72,6 +72,7 @@ class BandcampDownloader:
         :param space_char: char to use in place of spaces
         :return: filepath
         """
+        track = deepcopy(track)
         debug_title = track.get("title", "(no title)")
         logger.debug(f" Generating filepath/trackname for '{debug_title}'..")
         template: str = self.config.template
