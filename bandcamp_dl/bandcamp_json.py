@@ -45,5 +45,4 @@ def _js_to_json(js_data: str) -> str:
     logger.debug(" Converting JS to JSON..")
     # Decode with demjson first to reformat keys and lists.
     decoded_js = demjson3.decode(js_data)
-    result = demjson3.encode(decoded_js)
-    return result
+    return demjson3.encode(decoded_js)

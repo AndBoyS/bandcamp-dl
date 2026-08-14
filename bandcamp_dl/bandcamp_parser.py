@@ -4,7 +4,7 @@ import datetime
 import json
 import logging
 import sys
-from typing import Any
+from typing import Any, TypedDict
 from urllib.parse import urljoin
 
 import bs4
@@ -12,11 +12,23 @@ import requests
 from bs4.element import Tag
 
 from bandcamp_dl.bandcamp_json import extract_page_json
-from bandcamp_dl.config import Album, Track
+from bandcamp_dl.config import AlbumInfo, TrackInfo
 from bandcamp_dl.const import VERSION
 from bandcamp_dl.custom_ssl import CUSTOM_SSL_CTX, SSLAdapter
 
 logger = logging.getLogger(__name__)
+
+
+class TrackRaw(TypedDict):
+    title: str
+    duration: float
+    track_num: int | None
+    artist: str | None
+    track_id: int | None
+    title_link: str | None
+    file: dict[str, str] | None
+    has_lyrics: bool
+    lyrics: str | None
 
 
 class BandcampParser:
@@ -36,7 +48,7 @@ class BandcampParser:
         add_lyrics: bool = False,
         add_genres: bool = False,
         cover_quality: int = 0,
-    ) -> Album | None:
+    ) -> AlbumInfo | None:
         """Requests the page, cherry-picks album info
 
         :param url: album/track url
@@ -73,7 +85,7 @@ class BandcampParser:
         logger.debug(" BandcampJSON generated..")
 
         logger.debug(" Generating Album..")
-        tracks_raw: list[dict[str, Any]] = page_json["trackinfo"]
+        tracks_raw: list[TrackRaw] = page_json["trackinfo"]
         tracks = [self.parse_track(t) for t in tracks_raw]
 
         artist_url: str
@@ -169,7 +181,7 @@ class BandcampParser:
 
         tracks = [t for t in tracks if t.file is not None]
 
-        album = Album(
+        album = AlbumInfo(
             tracks=tracks,
             title=album_title,
             artist=page_json["artist"],
@@ -205,11 +217,12 @@ class BandcampParser:
         logger.debug(" Lyrics not found..")
         return ""
 
-    def parse_track(self, track_raw: dict[str, Any]) -> Track:
+    def parse_track(self, track_raw: TrackRaw) -> TrackInfo:
         logger.debug(f" Generating track metadata for '{track_raw['title']}'..")
-        track = Track(
+        track_num = track_raw["track_num"]
+        track = TrackInfo(
             duration=track_raw["duration"],
-            track_num=track_raw["track_num"],
+            track_num=track_num,
             title=track_raw["title"],
             artist=track_raw["artist"],
             track_id=track_raw.get("track_id"),
@@ -218,10 +231,10 @@ class BandcampParser:
         )
 
         if track.file is not None and "mp3-128" in track.file:
-            if "https" in track_raw["file"]["mp3-128"]:
+            if "https" in track.file["mp3-128"]:
                 track.download_url = track.file["mp3-128"]
             else:
-                track.download_url = "http:" + track_raw["file"]["mp3-128"]
+                track.download_url = "http:" + track.file["mp3-128"]
 
         if track_raw["has_lyrics"] is not False and track_raw["lyrics"] is not None:
             track.lyrics = track_raw["lyrics"].replace("\\r\\n", "\n")

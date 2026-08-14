@@ -4,13 +4,12 @@ import logging
 import os
 import re
 import shutil
-from typing import Any
 
 import requests
 import slugify
 from mutagen import id3, mp3
 
-from bandcamp_dl.config import Album, CaseType, Config
+from bandcamp_dl.config import AlbumInfo, CaseType, Config, TemplateTokens, TrackInfo
 from bandcamp_dl.const import VERSION
 
 logger = logging.getLogger(__name__)
@@ -34,12 +33,13 @@ class BandcampDownloader:
         self.urls = urls
         self.album_art: str | None = None
         self.num_tracks: int = 0
+        # TODO: don't like this
         self.track_num: int = 0
 
-    def start(self, album: Album) -> None:
+    def start(self, album: AlbumInfo) -> None:
         """Start album download process
 
-        :param album: album dict
+        :param album: album info
         """
 
         if not album.all_tracks_have_url and not self.config.no_confirm:
@@ -55,7 +55,8 @@ class BandcampDownloader:
 
     def template_to_path(
         self,
-        track: dict[str, Any],
+        track: TrackInfo,
+        album: AlbumInfo,
         ascii_only: bool,
         ok_chars: str,
         space_char: str,
@@ -65,6 +66,7 @@ class BandcampDownloader:
         """Create valid filepath based on template
 
         :param track: track metadata
+        :param album: track metadata
         :param ok_chars: optional chars to allow
         :param ascii_only: allow only ascii chars in filename
         :param keep_space: retain whitespace in filename
@@ -72,59 +74,50 @@ class BandcampDownloader:
         :param space_char: char to use in place of spaces
         :return: filepath
         """
-        track = deepcopy(track)
-        debug_title = track.get("title", "(no title)")
-        logger.debug(f" Generating filepath/trackname for '{debug_title}'..")
-        template: str = self.config.template
+        logger.debug(f" Generating filepath/trackname for '{track.title}'..")
+        template = self.config.template
         logger.debug(f"\n\tTemplate: {template}")
 
-        def slugify_preset(content: str) -> str:
-            retain_case = case_mode != CaseType.LOWER
-            if case_mode == CaseType.UPPER:
-                content = content.upper()
-            if case_mode == CaseType.CAMEL:
-                # pyrefly: ignore [implicit-any-lambda]
-                content = re.sub(r"(((?<=\s)|^|-)[a-z])", lambda x: x.group().upper(), content.lower())
-            return slugify.slugify(
-                content,
-                ok=ok_chars,
-                only_ascii=ascii_only,
-                spaces=keep_space,
-                lower=not retain_case,
-                space_replacement=space_char,
-            )
+        album_title = album.title
+        album_title = _maybe_truncate(album_title, trunc_len=self.config.truncate_album)
+        if self.config.untitled_path_from_slug and album_title.lower() == "untitled":
+            album_title = album.url.split("/")[-1].replace("-", " ")
 
-        template_tokens = ["trackartist", "artist", "album", "title", "date", "label", "track", "album_id", "track_id"]
-        for token in template_tokens:
-            key = token
-            if token == "trackartist":
-                key = "artist"
-            elif token == "artist":
-                key = "albumartist"
+        track_title = track.title
+        track_title = _maybe_truncate(track_title, trunc_len=self.config.truncate_track)
 
-            if key == "artist" and track.get("artist") is None:
-                track["artist"] = track.get("albumartist")
-                logger.debug(
-                    f"Track artist is None for '{debug_title}', replacing with album artist ({track['artist']})"
+        track_artist = track.artist if track.artist is not None else album.artist
+        label = album.label if album.label is not None else ""
+
+        template_values: dict[str, str] = {
+            TemplateTokens.trackartist: track_artist,
+            TemplateTokens.artist: album.artist,
+            TemplateTokens.album: album_title,
+            TemplateTokens.title: track_title,
+            TemplateTokens.date: album.date,
+            TemplateTokens.label: label,
+            TemplateTokens.track: "Single" if track.track_num is None else str(track.track_num).zfill(2),
+            TemplateTokens.album_id: "" if album.album_id is None else str(album.album_id),
+            TemplateTokens.track_id: "" if track.track_id is None else str(track.track_id),
+        }
+        for token, value in template_values.items():
+            replacement = (
+                value
+                if self.config.no_slugify
+                else _slugify(
+                    value,
+                    ascii_only=ascii_only,
+                    ok_chars=ok_chars,
+                    space_char=space_char,
+                    keep_space=keep_space,
+                    case_mode=case_mode,
                 )
-
-            if self.config.untitled_path_from_slug and token == "album" and track["album"].lower() == "untitled":
-                url = track["url"]
-                assert isinstance(url, str)
-                track["album"] = url.split("/")[-1].replace("-", " ")
-
-            if token == "track" and track["track"] == "None":
-                track["track"] = "Single"
-            else:
-                track["track"] = str(track["track"]).zfill(2)
-
-            replacement = str(track.get(key, "")) if self.config.no_slugify else slugify_preset(track.get(key, ""))
-
-            template = template.replace(f"%{{{token}}}", replacement)
+            )
+            template = template.replace(token, replacement)
 
         output = f"{self.config.base_dir}/{template}.mp3" if self.config.base_dir is not None else f"{template}.mp3"
 
-        logger.debug(f" filepath/trackname generated for '{debug_title}'..")
+        logger.debug(f" filepath/trackname generated for '{track.title}'..")
         logger.debug(f"\n\tPath: {output}")
         return output
 
@@ -142,53 +135,24 @@ class BandcampDownloader:
 
         return directory
 
-    def download_album(self, album: Album) -> bool:
+    def download_album(self, album: AlbumInfo) -> bool:
         """Download all MP3 files in the album
 
-        :param album: album dict
+        :param album: album info
         :return: True if successful
         """
         for track_index, track in enumerate(album.tracks):
-            track_meta: dict[str, Any] = {
-                "artist": track.artist,
-                "albumartist": album.artist,
-                "label": album.label,
-                "album": album.title,
-                "title": track.title.replace(f"{track.artist} - ", "", 1),
-                "track": str(track.track_num),
-                "track_id": track.track_id,
-                "album_id": album.album_id,
-                # TODO: Find out why the 'lyrics' key seems to vanish.
-                "lyrics": track.lyrics,
-                "date": album.date,
-                "url": album.url,
-                "genres": album.genres,
-            }
-
-            path_meta = track_meta.copy()
-
-            truncate_album: int = self.config.truncate_album
-            if truncate_album > 0 and len(path_meta["album"]) > truncate_album:
-                album_value = path_meta["album"]
-                assert isinstance(album_value, str)
-                path_meta["album"] = album_value[:truncate_album]
-
-            truncate_track = self.config.truncate_track
-            if truncate_track > 0 and len(path_meta["title"]) > truncate_track:
-                title_value = path_meta["title"]
-                assert isinstance(title_value, str)
-                path_meta["title"] = title_value[:truncate_track]
-
             self.num_tracks = len(album.tracks)
             self.track_num = track_index + 1
 
             filepath = self.template_to_path(
-                path_meta,
-                self.config.ascii_only,
-                self.config.ok_chars,
-                self.config.space_char,
-                self.config.keep_spaces,
-                self.config.case_mode,
+                track=track,
+                album=album,
+                ascii_only=self.config.ascii_only,
+                ok_chars=self.config.ok_chars,
+                space_char=self.config.space_char,
+                keep_space=self.config.keep_spaces,
+                case_mode=self.config.case_mode,
             )
             filepath = filepath + ".tmp"
             filename = filepath.rsplit("/", 1)[1]
@@ -219,7 +183,7 @@ class BandcampDownloader:
                     total = int(file_length / 100)
                     # If file exists and is still a tmp file skip downloading and encode
                     if os.path.exists(filepath):
-                        self.write_id3_tags(filepath, track_meta)
+                        self.write_id3_tags(filepath, track=track, album=album)
                         # Set skip to True so that we don't try encoding again
                         skip = True
                         # break out of the try/except and move on to the next file
@@ -263,7 +227,7 @@ class BandcampDownloader:
                     print("Downloading failed..")
                     return False
             if skip is False:
-                self.write_id3_tags(filepath, track_meta)
+                self.write_id3_tags(filepath, track=track, album=album)
 
         if os.path.isfile(f"{self.config.base_dir}/{VERSION}.not.finished"):
             os.remove(f"{self.config.base_dir}/{VERSION}.not.finished")
@@ -274,14 +238,14 @@ class BandcampDownloader:
 
         return True
 
-    def write_id3_tags(self, filepath: str, meta: dict[str, Any]) -> None:
+    def write_id3_tags(self, filepath: str, track: TrackInfo, album: AlbumInfo) -> None:
         """Write metadata to the MP3 file
 
         :param filepath: name of mp3 file
-        :param meta: dict of track metadata
+        :param track: track metadata
+        :param album: album metadata
         """
-        title = meta["title"]
-        assert isinstance(title, str)
+        title = track.title
         logger.debug(f" Encoding process starting for '{title}'..")
 
         filename = filepath.rsplit("/", 1)[1][:-8]
@@ -292,18 +256,16 @@ class BandcampDownloader:
         audio = mp3.MP3(filepath)
         _ = audio.delete()
         audio["TIT2"] = id3._frames.TIT2(encoding=3, text=["title"])
-        url = meta["url"]
-        assert isinstance(url, str)
-        audio["WOAF"] = id3._frames.WOAF(url=url)
+        audio["WOAF"] = id3._frames.WOAF(url=album.url)
         _ = audio.save(filename=None, v1=2)
 
         audio = mp3.MP3(filepath)
-        if self.config.group and "label" in meta:
-            label: str = meta["label"] or ""
+        if self.config.group:
+            label = album.label if album.label is not None else ""
             audio["TIT1"] = id3._frames.TIT1(encoding=3, text=label)
 
         if self.config.embed_lyrics:
-            lyrics: str = meta["lyrics"] or ""
+            lyrics = track.lyrics if track.lyrics is not None else ""
             audio["USLT"] = id3._frames.USLT(encoding=3, lang="eng", desc="", text=lyrics)
 
         if self.config.embed_art and self.album_art is not None:
@@ -311,37 +273,26 @@ class BandcampDownloader:
                 cover_bytes = cover_img.read()
                 audio["APIC"] = id3._frames.APIC(encoding=3, mime="image/jpeg", type=3, desc="Cover", data=cover_bytes)
         if self.config.embed_genres:
-            genres: str = meta["genres"] or ""
+            genres = album.genres if album.genres is not None else ""
             audio["TCON"] = id3._frames.TCON(encoding=3, text=genres)
         _ = audio.save()
 
         audio = mp3.EasyMP3(filepath)
 
-        track = meta["track"]
-        assert isinstance(track, str)
-        if track.isdigit():
-            audio["tracknumber"] = track
-        else:
-            audio["tracknumber"] = "1"
+        track_num = track.track_num
+        if track_num is None:
+            track_num = "1"
+        audio["tracknumber"] = track_num
 
-        artist = meta["artist"]
-        if artist is not None:
-            assert isinstance(artist, str)
-            audio["artist"] = artist
-        else:
-            albumartist = meta["albumartist"]
-            assert isinstance(albumartist, str)
-            audio["artist"] = albumartist
+        artist = track.artist
+        if artist is None:
+            artist = album.artist
+        audio["artist"] = artist
+
         audio["title"] = title
-        albumartist = meta["albumartist"]
-        assert isinstance(albumartist, str)
-        audio["albumartist"] = albumartist
-        album = meta["album"]
-        assert isinstance(album, str)
-        audio["album"] = album
-        date = meta["date"]
-        assert isinstance(date, str)
-        audio["date"] = date
+        audio["albumartist"] = album.artist
+        audio["album"] = album.title
+        audio["date"] = album.date
         _ = audio.save()
 
         logger.debug(f" Encoding process finished for '{title}'..")
@@ -358,3 +309,33 @@ class BandcampDownloader:
             return
 
         print_clean(f"\r({self.track_num}/{self.num_tracks}) [{'=' * 50}] :: Finished: {filename}")
+
+
+def _maybe_truncate(s: str, trunc_len: int) -> str:
+    if trunc_len > 0 and len(s) > trunc_len:
+        s = s[:trunc_len]
+    return s
+
+
+def _slugify(
+    content: str,
+    ascii_only: bool,
+    ok_chars: str,
+    space_char: str,
+    keep_space: bool,
+    case_mode: CaseType,
+) -> str:
+    retain_case = case_mode != CaseType.LOWER
+    if case_mode == CaseType.UPPER:
+        content = content.upper()
+    if case_mode == CaseType.CAMEL:
+        # pyrefly: ignore [implicit-any-lambda]
+        content = re.sub(r"(((?<=\s)|^|-)[a-z])", lambda x: x.group().upper(), content.lower())
+    return slugify.slugify(
+        content,
+        ok=ok_chars,
+        only_ascii=ascii_only,
+        spaces=keep_space,
+        lower=not retain_case,
+        space_replacement=space_char,
+    )

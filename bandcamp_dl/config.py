@@ -6,10 +6,7 @@ from pathlib import Path
 
 import toml
 from pydantic import BaseModel, ConfigDict, model_validator
-
-TEMPLATE = "%{artist}/%{album}/%{track} - %{title}"
-OK_CHARS = "-_~"
-SPACE_CHAR = "-"
+from typing_extensions import Self
 
 
 class CaseType(Enum):
@@ -29,6 +26,7 @@ class CaseType(Enum):
 USER_HOME = Path.home()
 # For Linux/BSD https://www.freedesktop.org/wiki/Software/xdg-user-dirs/
 # For Windows ans MacOS .appname is fine
+# TODO: check if can be better
 CONFIG_PATH = USER_HOME / (".config" if os.name == "posix" else ".bandcamp-dl") / "bandcamp-dl.toml"
 
 
@@ -38,6 +36,30 @@ class GoodBaseModel(BaseModel):
         validate_default=True,
         extra="forbid",
     )
+
+
+def as_placeholder(value: str) -> str:
+    return f"%{{{value}}}"
+
+
+class TemplateTokens:
+    trackartist = as_placeholder("trackartist")
+    artist = as_placeholder("artist")
+    album = as_placeholder("album")
+    title = as_placeholder("title")
+    date = as_placeholder("date")
+    label = as_placeholder("label")
+    track = as_placeholder("track")
+    album_id = as_placeholder("album_id")
+    track_id = as_placeholder("track_id")
+
+
+_TTokens = TemplateTokens
+
+# in 3.14 would be a template string
+TEMPLATE = f"{_TTokens.artist}/{_TTokens.album}/{_TTokens.track} - {_TTokens.title}"
+OK_CHARS = "-_~"
+SPACE_CHAR = "-"
 
 
 class Config(GoodBaseModel):
@@ -63,16 +85,18 @@ class Config(GoodBaseModel):
     truncate_track: int = 0
 
     @model_validator(mode="after")
-    def validate_art_options(self) -> Config:
+    def validate_art_options(self) -> Self:
         if self.no_art and self.embed_art:
             raise ValueError("no_art and embed_art cannot both be enabled")
         return self
 
 
-class Track(GoodBaseModel):
+class TrackInfo(GoodBaseModel):
+    model_config = ConfigDict(extra="ignore")
+
     title: str
-    duration: float
-    track_id: int | None
+    duration: float | None = None
+    track_id: int | None = None
     track_num: int | None = None
     partial_url: str | None = None
     download_url: str | None = None
@@ -81,13 +105,19 @@ class Track(GoodBaseModel):
     lyrics: str | None = None
     file: dict[str, str] | None = None
 
+    @model_validator(mode="after")
+    def format_title(self) -> Self:
+        new_title = self.title.replace(f"{self.artist} - ", "", 1)
+        object.__setattr__(self, "title", new_title)
+        return self
+
     @property
     def full_track_url(self) -> str:
         return f"{self.artist_url}{self.partial_url}"
 
 
-class Album(GoodBaseModel):
-    tracks: list[Track]
+class AlbumInfo(GoodBaseModel):
+    tracks: list[TrackInfo]
     title: str
     artist: str
     label: str | None = None

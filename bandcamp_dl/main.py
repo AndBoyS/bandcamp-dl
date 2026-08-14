@@ -9,7 +9,7 @@ from urllib.parse import urlparse
 from bandcamp_dl.bandcamp_downloader import BandcampDownloader
 from bandcamp_dl.bandcamp_parser import BandcampParser
 from bandcamp_dl.cli_parsing import parse_args, resolve_config
-from bandcamp_dl.config import Album, get_user_config
+from bandcamp_dl.config import AlbumInfo, get_user_config
 from bandcamp_dl.const import VERSION
 
 logger = logging.getLogger(__name__)
@@ -58,7 +58,7 @@ def main() -> None:
             else:
                 urls.append(url)
 
-    album_list: list[Album] = []
+    album_list: list[AlbumInfo] = []
 
     for url in urls:
         if "/album/" not in url and "/track/" not in url:
