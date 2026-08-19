@@ -114,7 +114,7 @@ class BandcampDownloader:
             )
             template = template.replace(token, replacement)
 
-        output = f"{self.config.base_dir}/{template}.mp3" if self.config.base_dir is not None else f"{template}.mp3"
+        output = f"{self.config.base_dir}/{template}.mp3"
 
         logger.debug(f" filepath/trackname generated for '{track.title}'..")
         logger.debug(f"\n\tPath: {output}")
@@ -174,8 +174,6 @@ class BandcampDownloader:
 
             while True:
                 try:
-                    if track.download_url is None:
-                        raise ValueError(f"download_url is None for {track.title}")
                     r = self.session.get(track.download_url, headers=self.headers, stream=True)
                     file_length = int(r.headers.get("content-length", 0))
                     total = int(file_length / 100)
@@ -191,20 +189,17 @@ class BandcampDownloader:
                         skip = True
                         break
                     with open(filepath, "wb") as f:
-                        if file_length is None:
-                            _ = f.write(r.content)
-                        else:
-                            dl = 0
-                            for data in r.iter_content(chunk_size=total):
-                                dl += len(data)
-                                _ = f.write(data)
-                                if not self.config.debug:
-                                    done = int(50 * dl / file_length)
-                                    print_clean(
-                                        f"\r({self.track_num}/{self.num_tracks}) "
-                                        f"[{'=' * done}{' ' * (50 - done)}] :: "
-                                        f"Downloading: {filename[:-8]}"
-                                    )
+                        dl = 0
+                        for data in r.iter_content(chunk_size=total):
+                            dl += len(data)
+                            _ = f.write(data)
+                            if not self.config.debug:
+                                done = int(50 * dl / file_length)
+                                print_clean(
+                                    f"\r({self.track_num}/{self.num_tracks}) "
+                                    f"[{'=' * done}{' ' * (50 - done)}] :: "
+                                    f"Downloading: {filename[:-8]}"
+                                )
                     local_size = os.path.getsize(filepath)
                     # if the local filesize before encoding doesn't match the remote filesize
                     # redownload
