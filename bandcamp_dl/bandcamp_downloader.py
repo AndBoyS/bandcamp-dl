@@ -211,6 +211,7 @@ class BandcampDownloader:
                     # TODO max retries in config
                     if local_size != file_length and attempts != 3:  # noqa: PLR2004
                         print(f"{filename} is incomplete, retrying..")
+                        attempts += 1
                         continue
                     # if the maximum number of retry attempts is reached give up and move on
                     if attempts == 3:  # noqa: PLR2004
