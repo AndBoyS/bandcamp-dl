@@ -10,7 +10,7 @@ from bandcamp_dl.bandcamp_downloader import BandcampDownloader
 from bandcamp_dl.bandcamp_parser import BandcampParser
 from bandcamp_dl.cli_parsing import parse_args, resolve_config
 from bandcamp_dl.config import AlbumInfo, get_user_config
-from bandcamp_dl.const import VERSION
+from bandcamp_dl.const import VERSION, is_error
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +46,9 @@ def main() -> None:
     elif arguments.artist is not None and arguments.track is not None:
         urls = [BandcampParser.generate_album_url(artist=arguments.artist, slug=arguments.track, page_type="track")]
     elif arguments.artist is not None:
-        urls = bandcamp_parser.get_full_discography(artist=arguments.artist, page_type="music")
+        urls, error_status = bandcamp_parser.get_full_discography(artist=arguments.artist, page_type="music")
+        if is_error(error_status) and not actual_config.ignore_errors:
+            sys.exit(1)
     else:
         urls = []
         for url in arguments.URL:
@@ -54,7 +56,10 @@ def main() -> None:
             if parsed_url.netloc.endswith(".bandcamp.com") and (parsed_url.path in {"/music", "/", ""}):
                 artist = parsed_url.netloc.split(".")[0]
                 print(f"Found artist page, fetching full discography for: {artist}")
-                urls.extend(bandcamp_parser.get_full_discography(artist, page_type="music"))
+                cur_urls, error_status = bandcamp_parser.get_full_discography(artist, page_type="music")
+                if is_error(error_status) and not actual_config.ignore_errors:
+                    sys.exit(1)
+                urls.extend(cur_urls)
             else:
                 urls.append(url)
 
@@ -64,26 +69,39 @@ def main() -> None:
         if "/album/" not in url and "/track/" not in url:
             continue
         logger.debug(f"\n\tURL: {url}")
-        album = bandcamp_parser.parse(
-            url,
-            add_art=not actual_config.no_art,
-            add_lyrics=actual_config.embed_lyrics,
-            add_genres=actual_config.embed_genres,
-            cover_quality=actual_config.cover_quality,
-        )
-        if album is not None:
-            logger.debug(f" Album data:\n\t{album}")
+        try:
+            album = bandcamp_parser.parse(
+                url,
+                add_art=not actual_config.no_art,
+                add_lyrics=actual_config.embed_lyrics,
+                add_genres=actual_config.embed_genres,
+                cover_quality=actual_config.cover_quality,
+            )
+        except Exception:
+            logger.exception(f"Failed parsing album at {url}")
+            if not actual_config.ignore_errors:
+                sys.exit(1)
+            else:
+                continue
 
-            if arguments.full_album and not album.all_tracks_have_url:
+        logger.debug(f" Album data:\n\t{album}")
+
+        if arguments.full_album and not album.all_tracks_have_url:
+            if actual_config.ignore_errors:
                 print(f"Full album not available. Skipping {album.title} ...")
             else:
-                album_list.append(album)
+                logger.exception(f"Full album not available for {album.title}")
+                sys.exit(1)
+        else:
+            album_list.append(album)
 
     logger.debug(f"Preparing download process for {len(album_list)} album(s)..")
     for album in album_list:
         bandcamp_downloader = BandcampDownloader(actual_config, [album.url])
         logger.debug(f"Initiating download process for album '{album.title}'..")
-        bandcamp_downloader.start(album)
+        success = bandcamp_downloader.start(album)
+        if not success and not actual_config.ignore_errors:
+            sys.exit(1)
         # Add a newline to stop prompt mangling
         print()
 

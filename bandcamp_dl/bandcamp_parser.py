@@ -3,9 +3,9 @@ from __future__ import annotations
 import datetime
 import json
 import logging
-import sys
-from typing import Any, TypedDict
-from urllib.parse import urljoin
+from collections import defaultdict
+from typing import Any, NamedTuple, TypedDict
+from urllib.parse import urljoin, urlsplit
 
 import bs4
 import requests
@@ -13,22 +13,23 @@ from bs4.element import Tag
 
 from bandcamp_dl.bandcamp_json import extract_page_json
 from bandcamp_dl.config import AlbumInfo, TrackInfo
-from bandcamp_dl.const import VERSION
+from bandcamp_dl.const import VERSION, ErrorStatus
 from bandcamp_dl.custom_ssl import CUSTOM_SSL_CTX, SSLAdapter
 
 logger = logging.getLogger(__name__)
 
 
-class TrackRaw(TypedDict):
+class TrackRaw(TypedDict, total=False):
     title: str
     duration: float
-    track_num: int | None
-    artist: str | None
-    track_id: int | None
-    title_link: str | None
-    file: dict[str, str] | None
+    track_num: int
+    artist: str
+    track_id: int
+    title_link: str
+    full_link: str
+    file: dict[str, str]
     has_lyrics: bool
-    lyrics: str | None
+    lyrics: str
 
 
 class BandcampParser:
@@ -48,7 +49,7 @@ class BandcampParser:
         add_lyrics: bool = False,
         add_genres: bool = False,
         cover_quality: int = 0,
-    ) -> AlbumInfo | None:
+    ) -> AlbumInfo:
         """Requests the page, cherry-picks album info
 
         :param url: album/track url
@@ -62,23 +63,33 @@ class BandcampParser:
         logger.debug(f" Starting to parse {url}")
         try:
             response = self.session.get(url, headers=self.headers)
-        except requests.exceptions.MissingSchema:
+        except requests.exceptions.MissingSchema as e:
             logger.warning(f"Invalid URL schema: {url}")
-            return None
+            raise e
 
         if not response.ok:
             logger.error(f"Could not fetch {url}; status code: {response.status_code} ({response.reason})")
             print(f"The Album/Track requested does not exist at: {url}")
-            sys.exit(2)
+            raise ValueError()
 
         try:
             soup = bs4.BeautifulSoup(response.text, "lxml")
         except bs4.FeatureNotFound:
             logger.debug("lxml parser unavailable, falling back to html.parser")
-            soup = bs4.BeautifulSoup(response.text, "html.parser")
+
+            try:
+                soup = bs4.BeautifulSoup(response.text, "html.parser")
+            except Exception as e:
+                logger.exception("Error parsing web page")
+                raise e
 
         logger.debug(" Generating BandcampJSON..")
-        bandcamp_json = extract_page_json(soup)
+        try:
+            bandcamp_json = extract_page_json(soup)
+        except Exception as e:
+            logger.exception("Error parsing web page")
+            raise e
+
         page_json: dict[str, Any] = {}
         for entry in bandcamp_json:
             page_json = {**page_json, **json.loads(entry)}
@@ -86,7 +97,6 @@ class BandcampParser:
 
         logger.debug(" Generating Album..")
         tracks_raw: list[TrackRaw] = page_json["trackinfo"]
-        tracks = [self.parse_track(t) for t in tracks_raw]
 
         artist_url: str
         if "/track/" in page_json["url"]:
@@ -94,10 +104,12 @@ class BandcampParser:
         else:
             artist_url = page_json["url"].rpartition("/album/")[0]
 
-        for t in tracks:
-            t.artist_url = artist_url
+        for t in tracks_raw:
+            partial_link = t.get("title_link")
+            if bool(partial_link):
+                t["full_link"] = urljoin(artist_url, partial_link)
 
-        track_ids: dict[str, int] = {}
+        link_to_track = {normalized_url_key(t.get("full_link")): t for t in tracks_raw if bool(t.get("full_link"))}
         if "track" in page_json and "itemListElement" in page_json["track"]:
             for item in page_json["track"]["itemListElement"]:
                 track_url = item["item"]["@id"]
@@ -106,31 +118,63 @@ class BandcampParser:
                     if prop.get("name") == "track_id":
                         value = prop["value"]
                         assert isinstance(value, int)
-                        track_ids[track_url] = value
+                        track_url = normalized_url_key(track_url)
+                        track = link_to_track.get(track_url)
+                        if track is not None:
+                            track["track_id"] = value
                         break
 
-        track_nums = [track.track_num for track in tracks]
-        if len(track_nums) != len(set(track_nums)):
-            logger.debug(" Duplicate track numbers found, re-numbering based on position..")
-            track_positions: dict[str, int] = {}
+        track_nums = {t.get("track_num") for t in tracks_raw}
+        amt_tracks = len(tracks_raw)
+
+        if amt_tracks != len(track_nums) or any(t is None for t in track_nums):
+            logger.debug(" Duplicate/incomplete track numbers found, re-numbering based on position..")
+            track_nums_by_page: dict[UrlKey, int] = {}
             if "track" in page_json and "itemListElement" in page_json["track"]:
                 for item in page_json["track"]["itemListElement"]:
                     full_track_url = item["item"]["@id"]
                     assert isinstance(full_track_url, str)
-                    position = item["position"]
-                    assert isinstance(position, int)
-                    track_positions[full_track_url] = position
+                    position = item.get("position")
+                    if isinstance(position, int):
+                        track_nums_by_page[normalized_url_key(full_track_url)] = position
 
-            for i, track in enumerate(tracks):
-                if track.full_track_url in track_positions:
-                    track.track_num = track_positions[track.full_track_url]
-                else:
-                    logger.debug(f" Could not find position for track: {track.full_track_url}")
-                    track.track_num = i + 1
+            for track in tracks_raw:
+                link = track.get("full_link")
+                if link is None:
+                    continue
+                num_candidate = track_nums_by_page.get(normalized_url_key(link))
+                if num_candidate is not None:
+                    track["track_num"] = num_candidate
 
-        album_date: str = page_json["album_release_date"]
+            num_to_tracks = defaultdict[int, list[int]](list)
+
+            for t_i, t in enumerate(tracks_raw):
+                num = t.get("track_num")
+                if num is not None:
+                    num_to_tracks[num].append(t_i)
+
+            for cur_tracks in num_to_tracks.values():
+                if len(cur_tracks) > 1:
+                    for i in cur_tracks:
+                        _ = tracks_raw[i].pop("track_num")
+
+            used_nums = {track["track_num"] for track in tracks_raw if track.get("track_num") is not None}
+
+            next_number = 1
+            for track in tracks_raw:
+                if track.get("track_num") is not None:
+                    continue
+
+                while next_number in used_nums:
+                    next_number += 1
+
+                track["track_num"] = next_number
+                used_nums.add(next_number)
+                next_number += 1
+
+        album_date: str | None = page_json.get("album_release_date")
         if album_date is None:
-            album_date = page_json["current"]["release_date"]
+            album_date = page_json["current"].get("release_date")
         if album_date is None:
             album_date = page_json["embed_info"]["item_public"]
 
@@ -170,23 +214,22 @@ class BandcampParser:
                 if album_id is not None:
                     break
 
-        for track in tracks:
-            if track_id_from_music_recording is not None:
-                track.track_id = track_id_from_music_recording
-            elif track.track_id is None:
-                track.track_id = track_ids.get(track.full_track_url)
-
-            if add_lyrics:
-                track.lyrics = self.get_track_lyrics(track.full_track_url)
-
-        tracks = [t for t in tracks if t.file is not None]
+        tracks = [
+            self.parse_track_finalize(
+                t,
+                track_id_from_music_recording=track_id_from_music_recording,
+                add_lyrics=add_lyrics,
+                album_title=album_title,
+            )
+            for t in tracks_raw
+        ]
 
         album = AlbumInfo(
-            tracks=tracks,
+            tracks=[t for t in tracks if t is not None],
             title=album_title,
             artist=page_json["artist"],
             label=label,
-            all_tracks_have_url=all(track.file is not None for track in tracks),
+            all_tracks_have_url=all(t is not None for t in tracks),
             art=self.get_album_art(soup=soup, quality=cover_quality) if add_art else None,
             date=str(datetime.datetime.strptime(album_date, "%d %b %Y %H:%M:%S GMT").year),
             url=url,
@@ -197,7 +240,6 @@ class BandcampParser:
             logger.exception(f"Could not find album art for {album_title}")
 
         logger.debug(f" Album generated: '{album.title}' ({album.url})..")
-
         return album
 
     def get_track_lyrics(self, track_url: str) -> str:
@@ -217,27 +259,51 @@ class BandcampParser:
         logger.debug(" Lyrics not found..")
         return ""
 
-    def parse_track(self, track_raw: TrackRaw) -> TrackInfo:
-        logger.debug(f" Generating track metadata for '{track_raw['title']}'..")
-        track_num = track_raw["track_num"]
+    def parse_track_finalize(
+        self, track_raw: TrackRaw, track_id_from_music_recording: int | None, add_lyrics: bool, album_title: str
+    ) -> TrackInfo | None:
+
+        title = track_raw.get("title")
+        if title is None:
+            logger.debug(f" Title not found for track {album_title}")
+            title = "No title"
+        track_artist = track_raw.get("artist")
+
+        if track_artist is not None:
+            title = title.replace(f"{track_artist} - ", "", 1)
+
+        logger.debug(f" Finalizing track metadata for '{title}'..")
+
+        file: dict[str, str] | None = track_raw.get("file")
+        if file is None:
+            file = {}
+
+        download_url: str | None = None
+        if "mp3-128" in file:
+            download_url = file["mp3-128"] if "https" in file["mp3-128"] else "http:" + file["mp3-128"]
+
+        if not bool(download_url):
+            logger.debug(f" download_url not found for '{title}'")
+            return None
+
         track = TrackInfo(
-            duration=track_raw["duration"],
-            track_num=track_num,
-            title=track_raw["title"],
-            artist=track_raw["artist"],
+            duration=track_raw.get("duration", 0),
+            track_num=track_raw.get("track_num"),
+            title=title,
+            track_artist=track_artist,
             track_id=track_raw.get("track_id"),
-            partial_url=track_raw["title_link"],
-            file=track_raw["file"],
+            track_url=track_raw.get("full_link"),
+            download_url=download_url,
         )
 
-        if track.file is not None and "mp3-128" in track.file:
-            if "https" in track.file["mp3-128"]:
-                track.download_url = track.file["mp3-128"]
-            else:
-                track.download_url = "http:" + track.file["mp3-128"]
-
-        if track_raw["has_lyrics"] is not False and track_raw["lyrics"] is not None:
+        if track_raw.get("has_lyrics") is not False and track_raw.get("lyrics") is not None:
             track.lyrics = track_raw["lyrics"].replace("\\r\\n", "\n")
+
+        if track_id_from_music_recording is not None:
+            track.track_id = track_id_from_music_recording
+
+        if add_lyrics and bool(track.track_url):
+            track.lyrics = self.get_track_lyrics(track.track_url)
 
         logger.debug(f" Track metadata generated for '{track.title}'..")
         return track
@@ -262,15 +328,18 @@ class BandcampParser:
         except Exception:
             return None
 
-    def get_full_discography(self, artist: str, page_type: str) -> list[str]:
+    def get_full_discography(self, artist: str, page_type: str) -> tuple[list[str], ErrorStatus]:
         """Generate a list of album and track urls based on the artist name
 
         :param artist: artist name
         :param page_type: Type of page, it should be music but it's a parameter so it's not
                           hardcoded
-        :return: urls as list of strs
+        :return: urls as list of strs, ErrorStatus
         """
 
+        # We have ErrorStatus instead of raising for case
+        # when some errors have occured, but there is still result
+        error_status: ErrorStatus = ErrorStatus.NO_ERROR
         album_urls: set[str] = set()
 
         music_page_url = f"https://{artist}.bandcamp.com/{page_type}"
@@ -280,7 +349,7 @@ class BandcampParser:
             response = self.session.get(music_page_url, headers=self.headers)
         except requests.exceptions.RequestException:
             logger.exception(f"Could not fetch artist page {music_page_url}")
-            return []
+            return ([], ErrorStatus.ERROR)
 
         try:
             soup = bs4.BeautifulSoup(response.text, "lxml")
@@ -290,8 +359,8 @@ class BandcampParser:
 
         music_grid = soup.find("ol", {"id": "music-grid"})
         if music_grid is None:
-            logger.warning(f"Could not find music grid on {music_page_url}. No albums found.")
-            return []
+            logger.exception(f"Could not find music grid on {music_page_url}. No albums found.")
+            return ([], ErrorStatus.ERROR)
 
         if "data-client-items" in music_grid.attrs:
             logger.debug("Found data-client-items attribute. Parsing for album URLs.")
@@ -299,17 +368,22 @@ class BandcampParser:
                 data_client_items = music_grid["data-client-items"]
                 assert isinstance(data_client_items, str)
                 json_string = bs4.BeautifulSoup(data_client_items, "html.parser").text
-                items = json.loads(json_string)
-                for item in items:
-                    if "page_url" in item:
-                        page_url = item["page_url"]
-                        assert isinstance(page_url, str)
-                        full_url = urljoin(music_page_url, page_url)
-                        album_urls.add(full_url)
+                items: list[dict[str, Any]] = json.loads(json_string)
             except (json.JSONDecodeError, TypeError):
                 logger.exception(f"Failed to parse data-client-items JSON from {music_page_url}")
+                error_status = ErrorStatus.ERROR
+            else:
+                for item in items:
+                    if "page_url" in item:
+                        page_url = item.get("page_url")
+                        if isinstance(page_url, str):
+                            full_url = urljoin(music_page_url, page_url)
+                            album_urls.add(full_url)
+                        else:
+                            logger.exception("Failed to extract url")
+                            error_status = ErrorStatus.ERROR
 
-        logger.debug("Scraping all <li> elements in the music grid for links.")
+        logger.debug(f"Scraping all <li> elements in the music grid for links ({artist}).")
         for a in music_grid.select("li.music-grid-item a"):
             href = a.get("href")
             if href is not None:
@@ -318,4 +392,17 @@ class BandcampParser:
                 album_urls.add(full_url)
 
         logger.info(f"Found a total of {len(album_urls)} unique album/track links.")
-        return list(album_urls)
+        return list(album_urls), error_status
+
+
+class UrlKey(NamedTuple):
+    host: str
+    path: str
+
+
+def normalized_url_key(url: str) -> UrlKey:
+    parsed = urlsplit(url)
+    host = parsed.hostname.lower() if parsed.hostname is not None else ""
+    # pyrefly: ignore [implicit-bool]
+    path = parsed.path.rstrip("/") or "/"
+    return UrlKey(host=host, path=path)

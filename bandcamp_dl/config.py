@@ -66,6 +66,7 @@ class Config(GoodBaseModel):
     base_dir: Path = USER_HOME
     template: str = TEMPLATE
     overwrite: bool = False
+    # TODO: change to art modes
     no_art: bool = False
     embed_art: bool = False
     embed_lyrics: bool = False
@@ -83,6 +84,7 @@ class Config(GoodBaseModel):
     cover_quality: int = 0
     truncate_album: int = 0
     truncate_track: int = 0
+    ignore_errors: bool = False
 
     @model_validator(mode="after")
     def validate_art_options(self) -> Self:
@@ -92,28 +94,14 @@ class Config(GoodBaseModel):
 
 
 class TrackInfo(GoodBaseModel):
-    model_config = ConfigDict(extra="ignore")
-
     title: str
-    duration: float | None = None
-    track_id: int | None = None
+    duration: float
     track_num: int | None = None
-    partial_url: str | None = None
-    download_url: str | None = None
-    artist: str | None = None
-    artist_url: str | None = None
+    download_url: str
+    track_id: int | None = None
+    track_url: str | None = None
+    track_artist: str | None = None
     lyrics: str | None = None
-    file: dict[str, str] | None = None
-
-    @model_validator(mode="after")
-    def format_title(self) -> Self:
-        new_title = self.title.replace(f"{self.artist} - ", "", 1)
-        object.__setattr__(self, "title", new_title)
-        return self
-
-    @property
-    def full_track_url(self) -> str:
-        return f"{self.artist_url}{self.partial_url}"
 
 
 class AlbumInfo(GoodBaseModel):

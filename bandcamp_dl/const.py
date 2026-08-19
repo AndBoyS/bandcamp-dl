@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.metadata
+from enum import Enum
 from pathlib import Path
 from typing import Any
 
@@ -14,3 +15,12 @@ if pyproject_path.exists():
     VERSION: str = metadata["project"]["version"]
 else:
     VERSION = importlib.metadata.version("bandcamp-downloader")
+
+
+class ErrorStatus(Enum):
+    ERROR = 1
+    NO_ERROR = 2
+
+
+def is_error(err_status: ErrorStatus) -> bool:
+    return err_status == ErrorStatus.ERROR

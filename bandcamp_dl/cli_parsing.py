@@ -12,6 +12,7 @@ from bandcamp_dl.config import CaseType, Config
 class ConfigurableArgs(tap.TypedArgs):
     # Stuff that can be taken from user config
     debug: bool | None
+    ignore_errors: bool | None
     template: str | None
     base_dir: Path | None
     overwrite: bool | None
@@ -83,6 +84,13 @@ def parse_args(raw_args: list[str] | None = None) -> tuple[argparse.ArgumentPars
     )
     _ = parser.add_argument("--truncate-album", type=int, metavar="LENGTH", help="Truncate album title; 0 for no limit")
     _ = parser.add_argument("--truncate-track", type=int, metavar="LENGTH", help="Truncate track title; 0 for no limit")
+    add_boolean_argument(
+        parser,
+        "ignore_errors",
+        pos_flags=("--ignore-errors",),
+        neg_flags=("--no-ignore-errors",),
+        help="Continue downloading when an parsing/downloading error occurs",
+    )
     add_boolean_argument(
         parser, "debug", pos_flags=("-d", "--debug"), neg_flags=("--no-debug",), help="Verbose logging"
     )

@@ -36,22 +36,21 @@ class BandcampDownloader:
         # TODO: don't like this
         self.track_num: int = 0
 
-    def start(self, album: AlbumInfo) -> None:
+    def start(self, album: AlbumInfo) -> bool:
         """Start album download process
 
         :param album: album info
         """
 
         if not album.all_tracks_have_url and not self.config.no_confirm:
+            # TODO: reprompt
             choice = input("Track list incomplete, some tracks may be private, download anyway? (yes/no): ").lower()
             if choice in {"yes", "y"}:
                 print("Starting download process.")
-                _ = self.download_album(album)
-            else:
-                print("Cancelling download process.")
-                return
-        else:
-            _ = self.download_album(album)
+                return self.download_album(album)
+            print("Cancelling download process.")
+            return False
+        return self.download_album(album)
 
     def template_to_path(
         self,
@@ -86,7 +85,7 @@ class BandcampDownloader:
         track_title = track.title
         track_title = _maybe_truncate(track_title, trunc_len=self.config.truncate_track)
 
-        track_artist = track.artist if track.artist is not None else album.artist
+        track_artist = track.track_artist if track.track_artist is not None else album.artist
         label = album.label if album.label is not None else ""
 
         template_values: dict[str, str] = {
@@ -96,7 +95,7 @@ class BandcampDownloader:
             TemplateTokens.title: track_title,
             TemplateTokens.date: album.date,
             TemplateTokens.label: label,
-            TemplateTokens.track: "Single" if track.track_num is None else str(track.track_num).zfill(2),
+            TemplateTokens.track: str(track.track_num).zfill(2) if bool(track.track_num) else "Single",
             TemplateTokens.album_id: "" if album.album_id is None else str(album.album_id),
             TemplateTokens.track_id: "" if track.track_id is None else str(track.track_id),
         }
@@ -175,10 +174,9 @@ class BandcampDownloader:
 
             while True:
                 try:
-                    download_url = track.download_url
-                    if download_url is None:
+                    if track.download_url is None:
                         raise ValueError(f"download_url is None for {track.title}")
-                    r = self.session.get(download_url, headers=self.headers, stream=True)
+                    r = self.session.get(track.download_url, headers=self.headers, stream=True)
                     file_length = int(r.headers.get("content-length", 0))
                     total = int(file_length / 100)
                     # If file exists and is still a tmp file skip downloading and encode
@@ -227,7 +225,11 @@ class BandcampDownloader:
                     print("Downloading failed..")
                     return False
             if skip is False:
-                self.write_id3_tags(filepath, track=track, album=album)
+                try:
+                    self.write_id3_tags(filepath, track=track, album=album)
+                except Exception:
+                    logger.exception(f"Failed writing tags to '{track.title}' on album '{album.title}'")
+                    return False
 
         if os.path.isfile(f"{self.config.base_dir}/{VERSION}.not.finished"):
             os.remove(f"{self.config.base_dir}/{VERSION}.not.finished")
@@ -284,7 +286,7 @@ class BandcampDownloader:
             track_num = "1"
         audio["tracknumber"] = track_num
 
-        artist = track.artist
+        artist = track.track_artist
         if artist is None:
             artist = album.artist
         audio["artist"] = artist
