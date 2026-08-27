@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 from enum import Enum
 from pathlib import Path
@@ -7,6 +8,8 @@ from pathlib import Path
 import toml
 from pydantic import BaseModel, ConfigDict, model_validator
 from typing_extensions import Self
+
+logger = logging.getLogger(__name__)
 
 
 class CaseType(Enum):
@@ -90,6 +93,16 @@ class Config(GoodBaseModel):
     def validate_art_options(self) -> Self:
         if self.no_art and self.embed_art:
             raise ValueError("no_art and embed_art cannot both be enabled")
+        return self
+
+    @model_validator(mode="after")
+    def validate_template(self) -> Self:
+        stripped = self.template.strip("/")
+        if stripped != self.template:
+            logger.warning(f"Template contains leading/trailing '/'; stripping: '{self.template}' -> '{stripped}'")
+            self.template = stripped
+        if stripped == "":
+            raise ValueError("Template is empty after stripping path separators")
         return self
 
 

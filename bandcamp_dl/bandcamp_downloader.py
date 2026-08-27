@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import logging
-import os
 import re
 import shutil
+from pathlib import Path
 
 import requests
 import slugify
@@ -31,7 +31,7 @@ class BandcampDownloader:
         self.session = requests.Session()
         self.config = config
         self.urls = urls
-        self.album_art: str | None = None
+        self.album_art: Path | None = None
         self.num_tracks: int = 0
         # TODO: don't like this
         self.track_num: int = 0
@@ -61,7 +61,7 @@ class BandcampDownloader:
         space_char: str,
         keep_space: bool,
         case_mode: CaseType,
-    ) -> str:
+    ) -> Path:
         """Create valid filepath based on template
 
         :param track: track metadata
@@ -114,23 +114,22 @@ class BandcampDownloader:
             )
             template = template.replace(token, replacement)
 
-        output = f"{self.config.base_dir}/{template}.mp3"
+        output = self.config.base_dir / f"{template}.mp3"
 
         logger.debug(f" filepath/trackname generated for '{track.title}'..")
         logger.debug(f"\n\tPath: {output}")
         return output
 
-    def create_directory(self, filename: str) -> str:
+    def create_directory(self, filename: Path) -> Path:
         """Create directory based on filename if it doesn't exist
 
         :param filename: full filename
         :return: directory path
         """
-        directory = os.path.dirname(filename)
+        directory = filename.parent
         logger.debug(f" Directory:\n\t{directory}")
         logger.debug(f" Directory doesn't exist for {filename}, creating..")
-        if not os.path.exists(directory):
-            os.makedirs(directory)
+        directory.mkdir(parents=True, exist_ok=True)
 
         return directory
 
@@ -153,24 +152,28 @@ class BandcampDownloader:
                 keep_space=self.config.keep_spaces,
                 case_mode=self.config.case_mode,
             )
-            filepath = filepath + ".tmp"
-            filename = filepath.rsplit("/", 1)[1]
-            dirname = self.create_directory(filepath)
+            tmp_path = filepath.with_name(f"{filepath.name}.tmp")
+            del filepath
+            filename = tmp_path.name
+            dirname = self.create_directory(tmp_path)
 
-            logger.debug(f" Current file for track '{track.title}' on album '{album.title}':\n\t{filepath}")
+            logger.debug(f" Current file for track '{track.title}' on album '{album.title}':\n\t{tmp_path}")
 
-            if album.art is not None and not os.path.exists(dirname + "/cover.jpg"):
+            cover_path = dirname / "cover.jpg"
+            # TODO: failed art GET leaves zero-byte cover.jpg behind, blocking future art attempts
+            if album.art is not None and not cover_path.exists():
                 try:
-                    with open(dirname + "/cover.jpg", "wb") as f:
+                    with cover_path.open("wb") as f:
                         r = self.session.get(album.art, headers=self.headers)
                         _ = f.write(r.content)
-                    self.album_art = dirname + "/cover.jpg"
+                    self.album_art = cover_path
                 except Exception:
                     logger.exception(f"Couldn't download album art for track '{track.title}' on album '{album.title}'")
                     print("Couldn't download album art.")
 
             attempts = 0
             skip = False
+            output_path = tmp_path.with_suffix("")
 
             while True:
                 try:
@@ -178,17 +181,19 @@ class BandcampDownloader:
                     file_length = int(r.headers.get("content-length", 0))
                     total = int(file_length / 100)
                     # If file exists and is still a tmp file skip downloading and encode
-                    if os.path.exists(filepath):
-                        self.write_id3_tags(filepath, track=track, album=album)
+                    # TODO: incomplete tmp file from a retry also hits this path and gets encoded as if complete
+                    if tmp_path.exists():
+                        self.write_id3_tags(tmp_path, track=track, album=album)
+                        self._finalize_track(tmp_path, output_path)
                         # Set skip to True so that we don't try encoding again
                         skip = True
                         # break out of the try/except and move on to the next file
                         break
-                    if os.path.exists(filepath[:-4]) and self.config.overwrite is not True:
-                        print(f"File: {filename[:-4]} already exists and is complete, skipping..")
+                    if output_path.exists() and self.config.overwrite is not True:
+                        print(f"File: {output_path.name} already exists and is complete, skipping..")
                         skip = True
                         break
-                    with open(filepath, "wb") as f:
+                    with tmp_path.open("wb") as f:
                         dl = 0
                         for data in r.iter_content(chunk_size=total):
                             dl += len(data)
@@ -200,7 +205,7 @@ class BandcampDownloader:
                                     f"[{'=' * done}{' ' * (50 - done)}] :: "
                                     f"Downloading: {filename[:-8]}"
                                 )
-                    local_size = os.path.getsize(filepath)
+                    local_size = tmp_path.stat().st_size
                     # if the local filesize before encoding doesn't match the remote filesize
                     # redownload
                     # TODO max retries in config
@@ -212,7 +217,7 @@ class BandcampDownloader:
                     if attempts == 3:  # noqa: PLR2004
                         print("Maximum retries reached.. skipping.")
                         # Clean up incomplete file
-                        os.remove(filepath)
+                        tmp_path.unlink()
                         break
                     # if all is well continue the download process for the rest of the tracks
                     break
@@ -222,42 +227,45 @@ class BandcampDownloader:
                     return False
             if skip is False:
                 try:
-                    self.write_id3_tags(filepath, track=track, album=album)
+                    self.write_id3_tags(tmp_path, track=track, album=album)
+                    self._finalize_track(tmp_path, output_path)
                 except Exception:
                     logger.exception(f"Failed writing tags to '{track.title}' on album '{album.title}'")
                     return False
 
-        if os.path.isfile(f"{self.config.base_dir}/{VERSION}.not.finished"):
-            os.remove(f"{self.config.base_dir}/{VERSION}.not.finished")
+        not_finished = self.config.base_dir / f"{VERSION}.not.finished"
+        if not_finished.is_file():
+            not_finished.unlink()
 
         # Remove album art image as it is embedded
+        # TODO: album_art persists across albums; album without art after one with art -> FileNotFoundError here
         if self.config.embed_art and self.album_art is not None:
-            os.remove(self.album_art)
+            self.album_art.unlink()
 
         return True
 
-    def write_id3_tags(self, filepath: str, track: TrackInfo, album: AlbumInfo) -> None:
+    def write_id3_tags(self, tmp_path: Path, track: TrackInfo, album: AlbumInfo) -> None:
         """Write metadata to the MP3 file
 
-        :param filepath: name of mp3 file
+        :param tmp_path: name of mp3 file
         :param track: track metadata
         :param album: album metadata
         """
         title = track.title
         logger.debug(f" Encoding process starting for '{title}'..")
 
-        filename = filepath.rsplit("/", 1)[1][:-8]
+        filename = tmp_path.name[:-8]
 
         if not self.config.debug:
             print_clean(f"\r({self.track_num}/{self.num_tracks}) [{'=' * 50}] :: Encoding: {filename}")
 
-        audio = mp3.MP3(filepath)
+        audio = mp3.MP3(tmp_path)
         _ = audio.delete()
         audio["TIT2"] = id3._frames.TIT2(encoding=3, text=["title"])
         audio["WOAF"] = id3._frames.WOAF(url=album.url)
         _ = audio.save(filename=None, v1=2)
 
-        audio = mp3.MP3(filepath)
+        audio = mp3.MP3(tmp_path)
         if self.config.group:
             label = album.label if album.label is not None else ""
             audio["TIT1"] = id3._frames.TIT1(encoding=3, text=label)
@@ -267,7 +275,7 @@ class BandcampDownloader:
             audio["USLT"] = id3._frames.USLT(encoding=3, lang="eng", desc="", text=lyrics)
 
         if self.config.embed_art and self.album_art is not None:
-            with open(self.album_art, "rb") as cover_img:
+            with self.album_art.open("rb") as cover_img:
                 cover_bytes = cover_img.read()
                 audio["APIC"] = id3._frames.APIC(encoding=3, mime="image/jpeg", type=3, desc="Cover", data=cover_bytes)
         if self.config.embed_genres:
@@ -275,7 +283,7 @@ class BandcampDownloader:
             audio["TCON"] = id3._frames.TCON(encoding=3, text=genres)
         _ = audio.save()
 
-        audio = mp3.EasyMP3(filepath)
+        audio = mp3.EasyMP3(tmp_path)
 
         track_num = track.track_num
         if track_num is None:
@@ -294,19 +302,27 @@ class BandcampDownloader:
         _ = audio.save()
 
         logger.debug(f" Encoding process finished for '{title}'..")
-        logger.debug(f" Renaming:\n\t{filepath} -to-> {filepath[:-4]}")
+
+    def _finalize_track(self, tmp_path: Path, output_path: Path) -> None:
+        """Rename the completed tmp file to its final output path
+
+        :param tmp_path: temporary path of the tmp mp3 file
+        :param output_path: final path
+        """
+        logger.debug(f" Renaming:\n\t{tmp_path} -to-> {output_path}")
 
         try:
-            os.rename(filepath, filepath[:-4])
+            _ = tmp_path.rename(output_path)
+        # TODO: OSError can happen for other reasons?
         except OSError:
-            logger.warning(f"Output file already exists, replacing it: {filepath[:-4]}")
-            os.remove(filepath[:-4])
-            os.rename(filepath, filepath[:-4])
+            logger.warning(f"Output file already exists, replacing it: {output_path}")
+            output_path.unlink()
+            _ = tmp_path.rename(output_path)
 
         if self.config.debug:
             return
 
-        print_clean(f"\r({self.track_num}/{self.num_tracks}) [{'=' * 50}] :: Finished: {filename}")
+        print_clean(f"\r({self.track_num}/{self.num_tracks}) [{'=' * 50}] :: Finished: {output_path.stem}")
 
 
 def _maybe_truncate(s: str, trunc_len: int) -> str:
