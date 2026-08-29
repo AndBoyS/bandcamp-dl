@@ -47,10 +47,10 @@ class BandcampDownloader:
             choice = input("Track list incomplete, some tracks may be private, download anyway? (yes/no): ").lower()
             if choice in {"yes", "y"}:
                 print("Starting download process.")
-                return self.download_album(album)
+                return self.download_album(album, ignore_errors=self.config.ignore_errors)
             print("Cancelling download process.")
             return False
-        return self.download_album(album)
+        return self.download_album(album, ignore_errors=self.config.ignore_errors)
 
     def template_to_path(
         self,
@@ -133,7 +133,7 @@ class BandcampDownloader:
 
         return directory
 
-    def download_album(self, album: AlbumInfo) -> bool:
+    def download_album(self, album: AlbumInfo, ignore_errors: bool = False) -> bool:
         """Download all MP3 files in the album
 
         :param album: album info
@@ -176,26 +176,26 @@ class BandcampDownloader:
             output_path = tmp_path.with_suffix("")
 
             while True:
+                if attempts >= 3:  # noqa: PLR2004
+                    if ignore_errors:
+                        print("Maximum retries reached.. skipping.")
+                        skip = True
+                        break
+                    print("Maximum retries reached..")
+                    tmp_path.unlink(missing_ok=True)
+                    return False
                 try:
                     r = self.session.get(track.download_url, headers=self.headers, stream=True)
                     file_length = int(r.headers.get("content-length", 0))
-                    total = int(file_length / 100)
-                    # If file exists and is still a tmp file skip downloading and encode
-                    # TODO: incomplete tmp file from a retry also hits this path and gets encoded as if complete
-                    if tmp_path.exists():
-                        self.write_id3_tags(tmp_path, track=track, album=album)
-                        self._finalize_track(tmp_path, output_path)
-                        # Set skip to True so that we don't try encoding again
-                        skip = True
-                        # break out of the try/except and move on to the next file
-                        break
+                    chunk_size = int(file_length / 100)
+                    tmp_path.unlink(missing_ok=True)
                     if output_path.exists() and self.config.overwrite is not True:
                         print(f"File: {output_path.name} already exists and is complete, skipping..")
                         skip = True
                         break
                     with tmp_path.open("wb") as f:
                         dl = 0
-                        for data in r.iter_content(chunk_size=total):
+                        for data in r.iter_content(chunk_size=chunk_size):
                             dl += len(data)
                             _ = f.write(data)
                             if not self.config.debug:
@@ -209,29 +209,33 @@ class BandcampDownloader:
                     # if the local filesize before encoding doesn't match the remote filesize
                     # redownload
                     # TODO max retries in config
-                    if local_size != file_length and attempts != 3:  # noqa: PLR2004
+                    if local_size != file_length:  # noqa: PLR2004
                         print(f"{filename} is incomplete, retrying..")
                         attempts += 1
                         continue
-                    # if the maximum number of retry attempts is reached give up and move on
-                    if attempts == 3:  # noqa: PLR2004
-                        print("Maximum retries reached.. skipping.")
-                        # Clean up incomplete file
-                        tmp_path.unlink()
-                        break
                     # if all is well continue the download process for the rest of the tracks
                     break
                 except Exception:
                     logger.exception(f"Downloading failed for track '{track.title}' on album '{album.title}'")
                     print("Downloading failed..")
+                    if ignore_errors:
+                        print("Skipping track..")
+                        skip = True
+                        break
+                    tmp_path.unlink(missing_ok=True)
                     return False
+
             if skip is False:
                 try:
                     self.write_id3_tags(tmp_path, track=track, album=album)
                     self._finalize_track(tmp_path, output_path)
                 except Exception:
-                    logger.exception(f"Failed writing tags to '{track.title}' on album '{album.title}'")
-                    return False
+                    logger.exception(f"Failed processing '{track.title}' on album '{album.title}'")
+                    if not ignore_errors:
+                        return False
+                finally:
+                    tmp_path.unlink(missing_ok=True)
+            tmp_path.unlink(missing_ok=True)
 
         not_finished = self.config.base_dir / f"{VERSION}.not.finished"
         if not_finished.is_file():
@@ -311,13 +315,10 @@ class BandcampDownloader:
         """
         logger.debug(f" Renaming:\n\t{tmp_path} -to-> {output_path}")
 
-        try:
-            _ = tmp_path.rename(output_path)
-        # TODO: OSError can happen for other reasons?
-        except OSError:
+        if output_path.exists():
             logger.warning(f"Output file already exists, replacing it: {output_path}")
-            output_path.unlink()
-            _ = tmp_path.rename(output_path)
+
+        _ = tmp_path.replace(output_path)
 
         if self.config.debug:
             return
