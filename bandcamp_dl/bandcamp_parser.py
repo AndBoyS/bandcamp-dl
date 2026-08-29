@@ -63,9 +63,9 @@ class BandcampParser:
         logger.debug(f" Starting to parse {url}")
         try:
             response = self.session.get(url, headers=self.headers)
-        except requests.exceptions.MissingSchema as e:
+        except requests.exceptions.MissingSchema:
             logger.warning(f"Invalid URL schema: {url}")
-            raise e
+            raise
 
         if not response.ok:
             logger.error(f"Could not fetch {url}; status code: {response.status_code} ({response.reason})")
@@ -79,16 +79,16 @@ class BandcampParser:
 
             try:
                 soup = bs4.BeautifulSoup(response.text, "html.parser")
-            except Exception as e:
+            except Exception:
                 logger.exception("Error parsing web page")
-                raise e
+                raise
 
         logger.debug(" Generating BandcampJSON..")
         try:
             bandcamp_json = extract_page_json(soup)
-        except Exception as e:
+        except Exception:
             logger.exception("Error parsing web page")
-            raise e
+            raise
 
         page_json: dict[str, Any] = {}
         for entry in bandcamp_json:

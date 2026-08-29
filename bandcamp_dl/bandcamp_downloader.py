@@ -38,7 +38,8 @@ _RETRY_AFTER_CAP = 30.0
 
 
 class _RetriesExhaustedError(RuntimeError):
-    """Raised when a track download could not be completed within the retry budget."""
+    def __init__(self, title: str, max_retries: int) -> None:
+        super().__init__(f"Track '{title}' failed after {max_retries} download attempts")
 
 
 class TrackOutcome(IntEnum):
@@ -291,10 +292,7 @@ class BandcampDownloader:
                 logger.debug(f"retrying in {delay:.0f}s..")
                 time.sleep(delay)
         print("Maximum retries reached..")
-
-        raise _RetriesExhaustedError(
-            f"Track '{track.title}' failed after {_MAX_ATTEMPTS} download attempts"
-        ) from last_error
+        raise _RetriesExhaustedError(track.title, _MAX_ATTEMPTS) from last_error
 
     def _stream_response(
         self, r: requests.Response, tmp_path: Path, output_path: Path, file_length: int | None
