@@ -1,13 +1,18 @@
 from __future__ import annotations
 
+import contextlib
 import logging
+import math
 import re
 import shutil
+import time
+from enum import IntEnum
 from pathlib import Path
 
 import requests
 import slugify
 from mutagen import id3, mp3
+from requests import Response
 
 from bandcamp_dl.config import AlbumInfo, CaseType, Config, TemplateTokens, TrackInfo
 from bandcamp_dl.const import VERSION
@@ -18,6 +23,51 @@ logger = logging.getLogger(__name__)
 def print_clean(msg: str) -> None:
     terminal_size = shutil.get_terminal_size()
     print(f"{msg}{' ' * (terminal_size[0] - len(msg))}", end="")
+
+
+# TODO: max retries in config
+_MAX_ATTEMPTS = 3
+_TRANSIENT_ERRORS = (
+    requests.exceptions.ConnectionError,
+    requests.exceptions.Timeout,
+    requests.exceptions.ChunkedEncodingError,
+)
+# TODO examine
+_RETRYABLE_STATUSES = {408, 429, 500, 502, 503, 504}
+_RETRY_AFTER_CAP = 30.0
+
+
+class _RetriesExhaustedError(RuntimeError):
+    """Raised when a track download could not be completed within the retry budget."""
+
+
+class TrackOutcome(IntEnum):
+    """Result of a single track download sequence."""
+
+    COMPLETED = 1
+    SKIPPED = 2
+
+
+def _is_transient(exc: Exception) -> bool:
+    return isinstance(exc, _TRANSIENT_ERRORS)
+
+
+def _retry_delay_amount(e: requests.HTTPError, attempt: int) -> float:
+    """Get delay amount before retrying a retryable HTTP error, honoring the server's Retry-After header
+
+    :param e: HTTP error carrying the failed response
+    :param attempt: 1-based attempt number, used for the default exponential backoff
+    :return: seconds to wait before the next attempt
+    """
+    response = e.response
+    if isinstance(response, Response):
+        retry_after = response.headers.get("Retry-After")
+        if retry_after is not None:
+            with contextlib.suppress(ValueError):
+                retry_after = float(retry_after)
+                if math.isfinite(retry_after):
+                    return min(max(retry_after, 0.0), _RETRY_AFTER_CAP)
+    return min(2**attempt, 5)
 
 
 class BandcampDownloader:
@@ -137,6 +187,7 @@ class BandcampDownloader:
         """Download all MP3 files in the album
 
         :param album: album info
+        :param ignore_errors: skip failed tracks instead of aborting the album
         :return: True if successful
         """
         for track_index, track in enumerate(album.tracks):
@@ -153,8 +204,7 @@ class BandcampDownloader:
                 case_mode=self.config.case_mode,
             )
             tmp_path = filepath.with_name(f"{filepath.name}.tmp")
-            del filepath
-            filename = tmp_path.name
+            output_path = tmp_path.with_suffix("")
             dirname = self.create_directory(tmp_path)
 
             logger.debug(f" Current file for track '{track.title}' on album '{album.title}':\n\t{tmp_path}")
@@ -171,71 +221,18 @@ class BandcampDownloader:
                     logger.exception(f"Couldn't download album art for track '{track.title}' on album '{album.title}'")
                     print("Couldn't download album art.")
 
-            attempts = 0
-            skip = False
-            output_path = tmp_path.with_suffix("")
-
-            while True:
-                if attempts >= 3:  # noqa: PLR2004
-                    if ignore_errors:
-                        print("Maximum retries reached.. skipping.")
-                        skip = True
-                        break
-                    print("Maximum retries reached..")
-                    tmp_path.unlink(missing_ok=True)
-                    return False
-                try:
-                    r = self.session.get(track.download_url, headers=self.headers, stream=True)
-                    file_length = int(r.headers.get("content-length", 0))
-                    chunk_size = int(file_length / 100)
-                    tmp_path.unlink(missing_ok=True)
-                    if output_path.exists() and self.config.overwrite is not True:
-                        print(f"File: {output_path.name} already exists and is complete, skipping..")
-                        skip = True
-                        break
-                    with tmp_path.open("wb") as f:
-                        dl = 0
-                        for data in r.iter_content(chunk_size=chunk_size):
-                            dl += len(data)
-                            _ = f.write(data)
-                            if not self.config.debug:
-                                done = int(50 * dl / file_length)
-                                print_clean(
-                                    f"\r({self.track_num}/{self.num_tracks}) "
-                                    f"[{'=' * done}{' ' * (50 - done)}] :: "
-                                    f"Downloading: {filename[:-8]}"
-                                )
-                    local_size = tmp_path.stat().st_size
-                    # if the local filesize before encoding doesn't match the remote filesize
-                    # redownload
-                    # TODO max retries in config
-                    if local_size != file_length:  # noqa: PLR2004
-                        print(f"{filename} is incomplete, retrying..")
-                        attempts += 1
-                        continue
-                    # if all is well continue the download process for the rest of the tracks
-                    break
-                except Exception:
-                    logger.exception(f"Downloading failed for track '{track.title}' on album '{album.title}'")
-                    print("Downloading failed..")
-                    if ignore_errors:
-                        print("Skipping track..")
-                        skip = True
-                        break
-                    tmp_path.unlink(missing_ok=True)
-                    return False
-
-            if skip is False:
-                try:
+            try:
+                outcome = self._download_track(tmp_path, output_path, track=track)
+                if outcome is TrackOutcome.COMPLETED:
                     self.write_id3_tags(tmp_path, track=track, album=album)
                     self._finalize_track(tmp_path, output_path)
-                except Exception:
-                    logger.exception(f"Failed processing '{track.title}' on album '{album.title}'")
-                    if not ignore_errors:
-                        return False
-                finally:
-                    tmp_path.unlink(missing_ok=True)
-            tmp_path.unlink(missing_ok=True)
+            except Exception:
+                logger.exception(f"Failed processing '{track.title}' on album '{album.title}'")
+                if not ignore_errors:
+                    return False
+                print("Skipping track..")
+            finally:
+                tmp_path.unlink(missing_ok=True)
 
         not_finished = self.config.base_dir / f"{VERSION}.not.finished"
         if not_finished.is_file():
@@ -247,6 +244,82 @@ class BandcampDownloader:
             self.album_art.unlink()
 
         return True
+
+    def _download_track(self, tmp_path: Path, output_path: Path, track: TrackInfo) -> TrackOutcome:
+        """Download a single track into its tmp file, retrying transient failures
+
+        :param tmp_path: temporary path to stream into
+        :param output_path: final output path
+        :param track: track metadata
+        :return: COMPLETED when fully downloaded, SKIPPED when the finished file already exists
+        """
+        last_error: Exception | None = None
+        for attempt in range(1, _MAX_ATTEMPTS + 1):
+            tmp_path.unlink(missing_ok=True)
+            if output_path.exists() and self.config.overwrite is not True:
+                print(f"File: {output_path.name} already exists and is complete, skipping..")
+                return TrackOutcome.SKIPPED
+            delay = min(2**attempt, 5)
+            try:
+                with self.session.get(track.download_url, headers=self.headers, stream=True) as r:
+                    r.raise_for_status()
+                    file_length = r.headers.get("content-length")
+                    file_length = int(file_length) if (file_length is not None and file_length.isdecimal()) else None
+                    self._stream_response(r, tmp_path, output_path, file_length)
+                local_size = tmp_path.stat().st_size
+                if local_size > 0 and (file_length is None or local_size == file_length):
+                    return TrackOutcome.COMPLETED
+                if attempt < _MAX_ATTEMPTS:
+                    print(f"{output_path.name} is incomplete, retrying..")
+            except requests.HTTPError as e:
+                last_error = e
+                response = e.response
+                status = response.status_code if isinstance(response, Response) else None
+                if status is not None and status in _RETRYABLE_STATUSES:
+                    delay = _retry_delay_amount(e, attempt)
+                    logger.debug(f"HTTP {status} downloading '{track.title}'")
+                else:
+                    print("Downloading failed..")
+                    raise
+            except Exception as e:
+                last_error = e
+                if not _is_transient(e):
+                    print("Downloading failed..")
+                    raise
+                logger.debug(f"Transient failure downloading '{track.title}': {e}")
+            if attempt < _MAX_ATTEMPTS:
+                logger.debug(f"retrying in {delay:.0f}s..")
+                time.sleep(delay)
+        print("Maximum retries reached..")
+
+        raise _RetriesExhaustedError(
+            f"Track '{track.title}' failed after {_MAX_ATTEMPTS} download attempts"
+        ) from last_error
+
+    def _stream_response(
+        self, r: requests.Response, tmp_path: Path, output_path: Path, file_length: int | None
+    ) -> None:
+        """Stream the response body to tmp_path while printing progress
+
+        :param r: streaming response of the track file
+        :param tmp_path: temporary path to write to
+        :param output_path: final path, used for progress display
+        :param file_length: remote file size in bytes or None when unknown
+        """
+        chunk_size = max(file_length // 100, 8192) if bool(file_length) else 8192
+        with tmp_path.open("wb") as f:
+            dl = 0
+            for data in r.iter_content(chunk_size=chunk_size):
+                dl += len(data)
+                _ = f.write(data)
+                if not self.config.debug and bool(file_length):
+                    done = int(50 * dl / file_length)
+                    done = min(done, 50)
+                    print_clean(
+                        f"\r({self.track_num}/{self.num_tracks}) "
+                        f"[{'=' * done}{' ' * (50 - done)}] :: "
+                        f"Downloading: {output_path.stem}"
+                    )
 
     def write_id3_tags(self, tmp_path: Path, track: TrackInfo, album: AlbumInfo) -> None:
         """Write metadata to the MP3 file
@@ -292,7 +365,7 @@ class BandcampDownloader:
         track_num = track.track_num
         if track_num is None:
             track_num = "1"
-        audio["tracknumber"] = track_num
+        audio["tracknumber"] = str(track_num)
 
         artist = track.track_artist
         if artist is None:
