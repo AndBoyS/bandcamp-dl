@@ -28,47 +28,47 @@ def write_id3_tags(
     title = track.title
     logger.debug(f" Encoding process starting for '{title}'..")
 
-    # TODO: consolidate the three save passes into one
     audio = mp3.MP3(tmp_path)
     _ = audio.delete()
-    audio["TIT2"] = id3._frames.TIT2(encoding=3, text=["title"])
-    audio["WOAF"] = id3._frames.WOAF(url=album.url)
-    _ = audio.save(filename=None, v1=2)
-
-    audio = mp3.MP3(tmp_path)
-    if config.group:
-        label = album.label if album.label is not None else ""
-        audio["TIT1"] = id3._frames.TIT1(encoding=3, text=label)
-
-    if config.embed_lyrics:
-        lyrics = track.lyrics if track.lyrics is not None else ""
-        audio["USLT"] = id3._frames.USLT(encoding=3, lang="eng", desc="", text=lyrics)
-
-    if config.embed_art and art_path is not None:
-        with art_path.open("rb") as cover_img:
-            cover_bytes = cover_img.read()
-            audio["APIC"] = id3._frames.APIC(encoding=3, mime="image/jpeg", type=3, desc="Cover", data=cover_bytes)
-    if config.embed_genres:
-        genres = album.genres if album.genres is not None else ""
-        audio["TCON"] = id3._frames.TCON(encoding=3, text=genres)
-    _ = audio.save()
-
-    audio = mp3.EasyMP3(tmp_path)
-
-    track_num = track.track_num
-    if track_num is None:
-        track_num = "1"
-    audio["tracknumber"] = str(track_num)
+    if audio.tags is None:
+        audio.add_tags()
+    tags = audio.tags
+    assert tags is not None
 
     artist = track.track_artist
     if artist is None:
         artist = album.artist
-    audio["artist"] = artist
 
-    audio["title"] = title
-    audio["albumartist"] = album.artist
-    audio["album"] = album.title
-    audio["date"] = album.date
-    _ = audio.save()
+    track_num = track.track_num
+    if track_num is None:
+        track_num = "1"
+
+    tags.add(id3.TIT2(encoding=3, text=[title]))
+    tags.add(id3.TPE1(encoding=3, text=[artist]))
+    tags.add(id3.TPE2(encoding=3, text=[album.artist]))
+    tags.add(id3.TALB(encoding=3, text=[album.title]))
+    tags.add(id3.TDRC(encoding=3, text=album.date))
+    # TODO: also write TDOR (original release date); some players read TDOR for year display
+    tags.add(id3.TRCK(encoding=3, text=str(track_num)))
+    tags.add(id3.WOAF(url=album.url))
+
+    if config.group:
+        label = album.label if album.label is not None else ""
+        tags.add(id3.TIT1(encoding=3, text=label))
+
+    if config.embed_lyrics:
+        lyrics = track.lyrics if track.lyrics is not None else ""
+        tags.add(id3.USLT(encoding=3, lang="eng", desc="", text=lyrics))
+
+    if config.embed_art and art_path is not None:
+        with art_path.open("rb") as cover_img:
+            cover_bytes = cover_img.read()
+            tags.add(id3.APIC(encoding=3, mime="image/jpeg", type=3, desc="Cover", data=cover_bytes))
+
+    if config.embed_genres:
+        genres = album.genres if album.genres is not None else ""
+        tags.add(id3.TCON(encoding=3, text=genres))
+
+    _ = audio.save(v1=2)
 
     logger.debug(f" Encoding process finished for '{title}'..")
