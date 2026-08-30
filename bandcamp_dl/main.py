@@ -96,10 +96,10 @@ def main() -> None:
             album_list.append(album)
 
     logger.debug(f"Preparing download process for {len(album_list)} album(s)..")
+    bandcamp_downloader = BandcampDownloader(actual_config)
     for album in album_list:
-        bandcamp_downloader = BandcampDownloader(actual_config, [album.url])
         logger.debug(f"Initiating download process for album '{album.title}'..")
-        success = bandcamp_downloader.start(album)
+        success = bandcamp_downloader.download_album(album)
         if not success and not actual_config.ignore_errors:
             sys.exit(1)
         # Add a newline to stop prompt mangling
