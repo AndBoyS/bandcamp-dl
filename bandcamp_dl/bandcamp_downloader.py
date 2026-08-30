@@ -42,13 +42,20 @@ class BandcampDownloader:
         """
         # TODO: move the incomplete-tracklist confirm decision to the caller
         if not album.all_tracks_have_url and not self.config.no_confirm:
-            # TODO: reprompt
-            choice = input("Track list incomplete, some tracks may be private, download anyway? (yes/no): ").lower()
-            if choice in {"yes", "y"}:
-                print("Starting download process.")
-                return self._download_album(album, ignore_errors=self.config.ignore_errors)
-            print("Cancelling download process.")
-            return False
+            while True:
+                try:
+                    choice = input("Track list incomplete, some tracks may be private, download anyway? (yes/no): ")
+                except EOFError:
+                    print("\nCancelling download process.")
+                    return False
+                choice = choice.strip().lower()
+                if choice in ("yes", "y"):
+                    print("Starting download process.")
+                    return self._download_album(album, ignore_errors=self.config.ignore_errors)
+                if choice in ("no", "n"):
+                    print("Cancelling download process.")
+                    return False
+                print("Please answer yes or no.")
         return self._download_album(album, ignore_errors=self.config.ignore_errors)
 
     def _download_album(self, album: AlbumInfo, ignore_errors: bool = False) -> bool:
