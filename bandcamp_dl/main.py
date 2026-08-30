@@ -15,6 +15,23 @@ from bandcamp_dl.const import VERSION, is_error
 logger = logging.getLogger(__name__)
 
 
+def confirm_incomplete_download() -> bool:
+    while True:
+        try:
+            choice = input("Track list incomplete, some tracks may be private, download anyway? (yes/no): ")
+        except EOFError:
+            print("\nCancelling download process.")
+            return False
+        choice = choice.strip().lower()
+        if choice in ("yes", "y"):
+            print("Starting download process.")
+            return True
+        if choice in ("no", "n"):
+            print("Cancelling download process.")
+            return False
+        print("Please answer yes or no.")
+
+
 def main() -> None:
     parser, arguments = parse_args()
     user_conf = get_user_config()
@@ -98,8 +115,12 @@ def main() -> None:
     logger.debug(f"Preparing download process for {len(album_list)} album(s)..")
     bandcamp_downloader = BandcampDownloader(actual_config)
     for album in album_list:
-        logger.debug(f"Initiating download process for album '{album.title}'..")
-        success = bandcamp_downloader.download_album(album)
+        success = True
+        if not album.all_tracks_have_url and not actual_config.no_confirm:
+            success = confirm_incomplete_download()
+        if success:
+            logger.debug(f"Initiating download process for album '{album.title}'..")
+            success = bandcamp_downloader.download_album(album)
         if not success and not actual_config.ignore_errors:
             sys.exit(1)
         # Add a newline to stop prompt mangling
