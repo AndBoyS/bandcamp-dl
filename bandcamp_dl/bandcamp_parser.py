@@ -45,6 +45,7 @@ class BandcampParser:
     def parse(
         self,
         url: str,
+        *,
         add_art: bool = True,
         add_lyrics: bool = False,
         add_genres: bool = False,
@@ -260,7 +261,7 @@ class BandcampParser:
         return ""
 
     def parse_track_finalize(
-        self, track_raw: TrackRaw, track_id_from_music_recording: int | None, add_lyrics: bool, album_title: str
+        self, track_raw: TrackRaw, *, track_id_from_music_recording: int | None, add_lyrics: bool, album_title: str
     ) -> TrackInfo | None:
 
         title = track_raw.get("title")
@@ -309,7 +310,7 @@ class BandcampParser:
         return track
 
     @staticmethod
-    def generate_album_url(artist: str, slug: str, page_type: str) -> str:
+    def generate_album_url(*, artist: str, slug: str, page_type: str) -> str:
         """Generate an album url based on the artist and album name
 
         :param artist: artist name

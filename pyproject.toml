@@ -77,6 +77,7 @@ select = [
   "FURB",
   "TRY",
   "A005",
+  "PLR0917", # Max pos arguments
 ]
 ignore = [
   "E501",   # Line too long
@@ -86,6 +87,8 @@ ignore = [
   "TRY003", # Avoid specifying long messages outside the exception class
 ]
 
+[tool.ruff.lint.pylint]
+max-positional-args = 2
 
 [tool.pyrefly]
 use-ignore-files = false

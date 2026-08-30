@@ -32,7 +32,7 @@ class BandcampDownloader:
         self.headers = {"User-Agent": f"bandcamp-dl/{VERSION} (https://github.com/evolution0/bandcamp-dl)"}
         self.session = requests.Session()
         self.config = config
-        self._downloader = TrackFileDownloader(config, self.session, self.headers)
+        self._downloader = TrackFileDownloader(config, session=self.session, headers=self.headers)
 
     def download_album(self, album: AlbumInfo) -> bool:
         """Start album download process
@@ -66,7 +66,7 @@ class BandcampDownloader:
 
             logger.debug(f" Current file for track '{track.title}' on album '{album.title}':\n\t{tmp_path}")
 
-            self._ensure_cover_art(progress, folder, track_title=track.title)
+            self._ensure_cover_art(progress=progress, dirname=folder, track_title=track.title)
 
             try:
                 outcome = self._downloader.download_track(tmp_path, output_path, track=track, progress=progress)
@@ -108,7 +108,7 @@ class BandcampDownloader:
 
         return True
 
-    def _ensure_cover_art(self, progress: AlbumDownloadProgress, dirname: Path, track_title: str) -> None:
+    def _ensure_cover_art(self, *, progress: AlbumDownloadProgress, dirname: Path, track_title: str) -> None:
         """Fetch the album cover into the track's directory once and track it on the per-album state
 
         :param progress: mutable per-album download progress

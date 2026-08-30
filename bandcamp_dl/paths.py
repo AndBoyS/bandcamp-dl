@@ -19,6 +19,7 @@ def _maybe_truncate(s: str, trunc_len: int) -> str:
 
 def _slugify(
     content: str,
+    *,
     ascii_only: bool,
     ok_chars: str,
     space_char: str,
@@ -41,7 +42,7 @@ def _slugify(
     )
 
 
-def template_to_path(track: TrackInfo, album: AlbumInfo, config: Config) -> Path:
+def template_to_path(*, track: TrackInfo, album: AlbumInfo, config: Config) -> Path:
     """Create valid filepath based on template
 
     :param track: track metadata

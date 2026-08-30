@@ -63,13 +63,13 @@ def _retry_delay_amount(e: requests.HTTPError, attempt: int) -> float:
 class TrackFileDownloader:
     """Streams track files to disk with retry/backoff and progress display"""
 
-    def __init__(self, config: Config, session: requests.Session, headers: dict[str, str]) -> None:
+    def __init__(self, config: Config, *, session: requests.Session, headers: dict[str, str]) -> None:
         self.config = config
         self.session = session
         self.headers = headers
 
     def download_track(
-        self, tmp_path: Path, output_path: Path, track: TrackInfo, progress: AlbumDownloadProgress
+        self, tmp_path: Path, output_path: Path, *, track: TrackInfo, progress: AlbumDownloadProgress
     ) -> TrackOutcome:
         """Download a single track into its tmp file, retrying transient failures
 
@@ -91,7 +91,9 @@ class TrackFileDownloader:
                     r.raise_for_status()
                     file_length = r.headers.get("content-length")
                     file_length = int(file_length) if (file_length is not None and file_length.isdecimal()) else None
-                    self._stream_response(r, tmp_path, output_path, file_length, progress)
+                    self._stream_response(
+                        r=r, tmp_path=tmp_path, output_path=output_path, file_length=file_length, progress=progress
+                    )
                 local_size = tmp_path.stat().st_size
                 if local_size > 0 and (file_length is None or local_size == file_length):
                     return TrackOutcome.COMPLETED
@@ -121,6 +123,7 @@ class TrackFileDownloader:
 
     def _stream_response(
         self,
+        *,
         r: requests.Response,
         tmp_path: Path,
         output_path: Path,

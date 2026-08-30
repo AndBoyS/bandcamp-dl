@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 
 def write_id3_tags(
     tmp_path: Path,
+    *,
     track: TrackInfo,
     album: AlbumInfo,
     art_path: Path | None,
