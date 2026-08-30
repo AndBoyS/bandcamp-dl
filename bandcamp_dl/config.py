@@ -6,7 +6,7 @@ from enum import Enum
 from pathlib import Path
 
 import toml
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from typing_extensions import Self
 
 logger = logging.getLogger(__name__)
@@ -105,6 +105,8 @@ class Config(GoodBaseModel):
     truncate_album: int = 0
     truncate_track: int = 0
     ignore_errors: bool = False
+    # Number of retries after the initial download attempt (total attempts = max_retries + 1)
+    max_retries: int = Field(default=2, ge=0)
 
     @model_validator(mode="after")
     def validate_art_options(self) -> Self:

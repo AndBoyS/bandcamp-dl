@@ -19,8 +19,6 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# TODO: max retries in config
-_MAX_ATTEMPTS = 3
 _TRANSIENT_ERRORS = (
     requests.exceptions.ConnectionError,
     requests.exceptions.Timeout,
@@ -31,8 +29,8 @@ _RETRY_AFTER_CAP = 30.0
 
 
 class RetriesExhaustedError(RuntimeError):
-    def __init__(self, title: str, max_retries: int) -> None:
-        super().__init__(f"Track '{title}' failed after {max_retries} download attempts")
+    def __init__(self, title: str, attempts: int) -> None:
+        super().__init__(f"Track '{title}' failed after {attempts} download attempts")
 
 
 class TrackOutcome(IntEnum):
@@ -80,7 +78,8 @@ class TrackFileDownloader:
         :return: COMPLETED when fully downloaded, SKIPPED when the finished file already exists
         """
         last_error: Exception | None = None
-        for attempt in range(1, _MAX_ATTEMPTS + 1):
+        attempts_amt = self.config.max_retries + 1
+        for attempt in range(1, attempts_amt + 1):
             tmp_path.unlink(missing_ok=True)
             if output_path.exists() and self.config.overwrite is not True:
                 print(f"File: {output_path.name} already exists and is complete, skipping..")
@@ -97,7 +96,7 @@ class TrackFileDownloader:
                 local_size = tmp_path.stat().st_size
                 if local_size > 0 and (file_length is None or local_size == file_length):
                     return TrackOutcome.COMPLETED
-                if attempt < _MAX_ATTEMPTS:
+                if attempt < attempts_amt:
                     print(f"{output_path.name} is incomplete, retrying..")
             except requests.HTTPError as e:
                 last_error = e
@@ -115,11 +114,11 @@ class TrackFileDownloader:
                     print("Downloading failed..")
                     raise
                 logger.debug(f"Transient failure downloading '{track.title}': {e}")
-            if attempt < _MAX_ATTEMPTS:
+            if attempt < attempts_amt:
                 logger.debug(f"retrying in {delay:.0f}s..")
                 time.sleep(delay)
         print("Maximum retries reached..")
-        raise RetriesExhaustedError(track.title, _MAX_ATTEMPTS) from last_error
+        raise RetriesExhaustedError(track.title, attempts_amt) from last_error
 
     def _stream_response(
         self,

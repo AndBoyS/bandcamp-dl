@@ -32,6 +32,7 @@ class ConfigurableArgs(tap.TypedArgs):
     embed_genres: bool | None
     truncate_album: int | None
     truncate_track: int | None
+    max_retries: int | None
 
 
 class CliOnlyArgs(tap.TypedArgs):
@@ -84,6 +85,9 @@ def parse_args(raw_args: list[str] | None = None) -> tuple[argparse.ArgumentPars
     )
     _ = parser.add_argument("--truncate-album", type=int, metavar="LENGTH", help="Truncate album title; 0 for no limit")
     _ = parser.add_argument("--truncate-track", type=int, metavar="LENGTH", help="Truncate track title; 0 for no limit")
+    _ = parser.add_argument(
+        "--max-retries", type=int, help="Maximum retries per failed track download; 0 for a single attempt"
+    )
     add_boolean_argument(
         parser,
         "ignore_errors",
