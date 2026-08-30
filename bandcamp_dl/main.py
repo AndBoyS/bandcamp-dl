@@ -29,7 +29,7 @@ def main() -> None:
         logging.basicConfig(level=logging.DEBUG)
     else:
         logging.basicConfig()
-    logger.debug(f"Config/args: {json.dumps(vars(arguments), indent=4)}")
+    logger.debug(f"Config/args: {json.dumps(vars(arguments), indent=4, default=str)}")
     logger.debug(f"Config after merging with user's config: {actual_config.model_dump_json(indent=4)}")
     if not bool(arguments.URL) and not bool(arguments.artist):
         parser.print_usage()
