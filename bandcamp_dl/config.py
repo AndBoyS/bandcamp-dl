@@ -27,10 +27,27 @@ class CaseType(Enum):
 
 
 USER_HOME = Path.home()
-# For Linux/BSD https://www.freedesktop.org/wiki/Software/xdg-user-dirs/
-# For Windows ans MacOS .appname is fine
-# TODO: check if can be better
-CONFIG_PATH = USER_HOME / (".config" if os.name == "posix" else ".bandcamp-dl") / "bandcamp-dl.toml"
+
+
+def _user_config_dirs() -> list[Path]:
+    """Candidate user config directories in priority order
+
+    On Windows %APPDATA% comes first, with $XDG_CONFIG_HOME and $HOME/.config as fallbacks.
+    On Linux and macOS uses $XDG_CONFIG_HOME or $HOME/.config.
+    """
+    dirs: list[Path] = []
+    if os.name == "nt":
+        appdata = os.environ.get("APPDATA")
+        if appdata is not None and appdata != "":
+            dirs.append(Path(appdata))
+    xdg_config_home = os.environ.get("XDG_CONFIG_HOME")
+    if xdg_config_home is not None and xdg_config_home != "":
+        dirs.append(Path(xdg_config_home))
+    if os.name == "nt":
+        dirs.append(USER_HOME / "AppData" / "Roaming")
+    else:
+        dirs.append(USER_HOME / ".config")
+    return dirs
 
 
 class GoodBaseModel(BaseModel):
@@ -131,8 +148,17 @@ class AlbumInfo(GoodBaseModel):
 
 
 def get_user_config() -> Config:
-    if CONFIG_PATH.exists():
-        with CONFIG_PATH.open() as f:
-            toml_config = toml.load(f)
+    config_dirs = list(dict.fromkeys(_user_config_dirs()))
+    for config_dir in config_dirs:
+        path = config_dir / "bandcamp-dl" / "bandcamp-dl.toml"
+        if not path.exists():
+            continue
+        logger.debug(f"Reading user config from: {path}")
+        try:
+            with path.open() as f:
+                toml_config = toml.load(f)
+        except OSError:
+            logger.debug(f"Cannot access user config at: {path}", exc_info=True)
+            continue
         return Config(**toml_config)
     return Config()
