@@ -48,7 +48,7 @@ def write_id3_tags(
     tags.add(id3.TPE2(encoding=3, text=[album.artist]))
     tags.add(id3.TALB(encoding=3, text=[album.title]))
     tags.add(id3.TDRC(encoding=3, text=album.date))
-    # TODO: also write TDOR (original release date); some players read TDOR for year display
+    tags.add(id3.TDOR(encoding=3, text=album.date))
     tags.add(id3.TRCK(encoding=3, text=str(track_num)))
     tags.add(id3.WOAF(url=album.url))
 
