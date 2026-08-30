@@ -6,7 +6,7 @@ from pathlib import Path
 
 import requests
 
-from bandcamp_dl.config import AlbumInfo, Config
+from bandcamp_dl.config import AlbumInfo, ArtMode, Config
 from bandcamp_dl.const import VERSION
 from bandcamp_dl.download import TrackFileDownloader, TrackOutcome
 from bandcamp_dl.paths import template_to_path
@@ -110,7 +110,7 @@ class BandcampDownloader:
             not_finished.unlink()
 
         # Remove album art image as it is embedded
-        if self.config.embed_art and progress.art_path is not None:
+        if self.config.art_mode is ArtMode.EMBED and progress.art_path is not None:
             progress.art_path.unlink()
 
         return True

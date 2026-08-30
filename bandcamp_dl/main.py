@@ -9,7 +9,7 @@ from urllib.parse import urlparse
 from bandcamp_dl.bandcamp_downloader import BandcampDownloader
 from bandcamp_dl.bandcamp_parser import BandcampParser
 from bandcamp_dl.cli_parsing import parse_args, resolve_config
-from bandcamp_dl.config import AlbumInfo, get_user_config
+from bandcamp_dl.config import AlbumInfo, ArtMode, get_user_config
 from bandcamp_dl.const import VERSION, is_error
 
 logger = logging.getLogger(__name__)
@@ -72,7 +72,7 @@ def main() -> None:
         try:
             album = bandcamp_parser.parse(
                 url,
-                add_art=not actual_config.no_art,
+                add_art=actual_config.art_mode is not ArtMode.NONE,
                 add_lyrics=actual_config.embed_lyrics,
                 add_genres=actual_config.embed_genres,
                 cover_quality=actual_config.cover_quality,

@@ -26,6 +26,20 @@ class CaseType(Enum):
         return repr(self)
 
 
+class ArtMode(Enum):
+    NONE = "none"
+    FILE = "file"
+    EMBED = "embed"
+    FILE_EMBED = "file-embed"
+
+    # On python3.11 can move to StrEnum
+    def __repr__(self) -> str:
+        return str(self.value)
+
+    def __str__(self) -> str:
+        return repr(self)
+
+
 USER_HOME = Path.home()
 
 
@@ -86,9 +100,7 @@ class Config(GoodBaseModel):
     base_dir: Path = USER_HOME
     template: str = TEMPLATE
     overwrite: bool = False
-    # TODO: change to art modes
-    no_art: bool = False
-    embed_art: bool = False
+    art_mode: ArtMode = ArtMode.FILE
     embed_lyrics: bool = False
     group: bool = False
     no_slugify: bool = False
@@ -107,12 +119,6 @@ class Config(GoodBaseModel):
     ignore_errors: bool = False
     # Number of retries after the initial download attempt (total attempts = max_retries + 1)
     max_retries: int = Field(default=2, ge=0)
-
-    @model_validator(mode="after")
-    def validate_art_options(self) -> Self:
-        if self.no_art and self.embed_art:
-            raise ValueError("no_art and embed_art cannot both be enabled")
-        return self
 
     @model_validator(mode="after")
     def validate_template(self) -> Self:

@@ -70,10 +70,14 @@ Options:
   --base-dir BASE_DIR   Base location of which all files are downloaded
   -f, --full-album      Download only if all tracks are available
   -o, --overwrite       Overwrite tracks that already exist. Default is False.
-  -n, --no-art          Skip grabbing album art
+  --art-mode {none,file,embed,file-embed}
+                          Album art handling: 'none' skips art, 'file' keeps cover.jpg (default), 'embed' embeds it
+                          in tags and removes the file, 'file-embed' embeds it and keeps cover.jpg
+  -n, --no-art          Alias for --art-mode none. Skip grabbing album art
   -e, --embed-lyrics    Embed track lyrics (If available)
   -g, --group           Use album/track Label as iTunes grouping
-  -r, --embed-art       Embed album art (If available)
+  -r, --embed-art       Alias for --art-mode embed. Embed album art (If available)
+  --art-as-file         Alias for --art-mode file. Keep album art as cover.jpg
   --cover-quality {0,10,16}
                           Set the cover art quality. 0 is source, 10 is album page (1200x1200), 16 is default embed
                           (700x700).

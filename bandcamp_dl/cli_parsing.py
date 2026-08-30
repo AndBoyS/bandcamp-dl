@@ -6,7 +6,7 @@ from typing import Literal
 
 import typed_argparse as tap
 
-from bandcamp_dl.config import CaseType, Config
+from bandcamp_dl.config import ArtMode, CaseType, Config
 
 
 class ConfigurableArgs(tap.TypedArgs):
@@ -16,10 +16,9 @@ class ConfigurableArgs(tap.TypedArgs):
     template: str | None
     base_dir: Path | None
     overwrite: bool | None
-    no_art: bool | None
+    art_mode: ArtMode | None
     embed_lyrics: bool | None
     group: bool | None
-    embed_art: bool | None
     cover_quality: Literal[0, 10, 16] | None
     untitled_path_from_slug: bool | None
     no_slugify: bool | None
@@ -105,8 +104,27 @@ def parse_args(raw_args: list[str] | None = None) -> tuple[argparse.ArgumentPars
         neg_flags=("--no-overwrite",),
         help="Overwrite tracks that already exist",
     )
-    add_boolean_argument(
-        parser, "no_art", pos_flags=("-n", "--no-art"), neg_flags=("--art",), help="Skip grabbing album art"
+    _ = parser.add_argument(
+        "--art-mode",
+        dest="art_mode",
+        type=ArtMode,
+        default=None,
+        help="Album art handling: 'none' skips art, 'file' downloads cover.jpg (default), 'embed' embeds it in tags and"
+        " removes the file, 'file-embed' combines both",
+    )
+    _ = parser.add_argument(
+        "-n", "--no-art", dest="art_mode", action="store_const", const=ArtMode.NONE, help="Alias for --art-mode none"
+    )
+    _ = parser.add_argument(
+        "-r",
+        "--embed-art",
+        dest="art_mode",
+        action="store_const",
+        const=ArtMode.EMBED,
+        help="Alias for --art-mode embed",
+    )
+    _ = parser.add_argument(
+        "--art-as-file", dest="art_mode", action="store_const", const=ArtMode.FILE, help="Alias for --art-mode file"
     )
     add_boolean_argument(
         parser,
@@ -121,13 +139,6 @@ def parse_args(raw_args: list[str] | None = None) -> tuple[argparse.ArgumentPars
         pos_flags=("-g", "--group"),
         neg_flags=("--no-group",),
         help="Use album/track Label as iTunes grouping",
-    )
-    add_boolean_argument(
-        parser,
-        "embed_art",
-        pos_flags=("-r", "--embed-art"),
-        neg_flags=("--no-embed-art",),
-        help="Embed album art (If available)",
     )
     add_boolean_argument(
         parser,

@@ -5,7 +5,7 @@ from pathlib import Path
 
 from mutagen import id3, mp3
 
-from bandcamp_dl.config import AlbumInfo, Config, TrackInfo
+from bandcamp_dl.config import AlbumInfo, ArtMode, Config, TrackInfo
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +61,7 @@ def write_id3_tags(
         lyrics = track.lyrics if track.lyrics is not None else ""
         tags.add(id3.USLT(encoding=3, lang="eng", desc="", text=lyrics))
 
-    if config.embed_art and art_path is not None:
+    if config.art_mode in (ArtMode.EMBED, ArtMode.FILE_EMBED) and art_path is not None:
         with art_path.open("rb") as cover_img:
             cover_bytes = cover_img.read()
             tags.add(id3.APIC(encoding=3, mime="image/jpeg", type=3, desc="Cover", data=cover_bytes))
