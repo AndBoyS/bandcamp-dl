@@ -50,7 +50,7 @@ def template_to_path(*, track: TrackInfo, album: AlbumInfo, config: Config) -> P
     :param config: user config/args
     :return: filepath
     """
-    logger.debug(f" Generating filepath/trackname for '{track.title}'..")
+    logger.debug(f"Generating filepath/trackname for '{track.title}'..")
     template = config.template
     logger.debug(f"\n\tTemplate: {template}")
 
@@ -93,6 +93,6 @@ def template_to_path(*, track: TrackInfo, album: AlbumInfo, config: Config) -> P
 
     output = config.base_dir / f"{template}.mp3"
 
-    logger.debug(f" filepath/trackname generated for '{track.title}'..")
+    logger.debug(f"filepath/trackname generated for '{track.title}'..")
     logger.debug(f"\n\tPath: {output}")
     return output

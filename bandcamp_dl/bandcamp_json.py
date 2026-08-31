@@ -16,7 +16,7 @@ def extract_page_json(body: BeautifulSoup) -> list[str]:
 
 
 def _get_pagedata(body: BeautifulSoup) -> str:
-    logger.debug(" Grab pagedata JSON..")
+    logger.debug("Grab pagedata JSON..")
     pagedata_tag = body.find("div", {"id": "pagedata"})
     if pagedata_tag is None:
         raise ValueError("Could not find pagedata div on Bandcamp page")
@@ -27,7 +27,7 @@ def _get_pagedata(body: BeautifulSoup) -> str:
 
 def _get_embedded_json(body: BeautifulSoup) -> list[str]:
     """Get script elements containing the data we need."""
-    logger.debug(" Grabbing embedded scripts..")
+    logger.debug("Grabbing embedded scripts..")
     ld_json_script = body.find("script", {"type": "application/ld+json"})
     if ld_json_script is None:
         raise ValueError("Could not find application/ld+json script on Bandcamp page")
@@ -42,7 +42,7 @@ def _get_embedded_json(body: BeautifulSoup) -> list[str]:
 
 def _js_to_json(js_data: str) -> str:
     """Convert a JavaScript dictionary to JSON."""
-    logger.debug(" Converting JS to JSON..")
+    logger.debug("Converting JS to JSON..")
     # Decode with demjson first to reformat keys and lists.
     decoded_js = demjson3.decode(js_data)
     return demjson3.encode(decoded_js)

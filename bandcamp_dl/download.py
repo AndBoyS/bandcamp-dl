@@ -115,7 +115,7 @@ class TrackFileDownloader:
                     raise
                 logger.debug(f"Retrying '{track.title}' after failure: {e}")
             if attempt < attempts_amt:
-                logger.debug(f"retrying in {delay:.0f}s..")
+                logger.debug(f"Retrying in {delay:.0f}s..")
                 time.sleep(delay)
         raise RetriesExhaustedError(track.title, attempts_amt) from last_error
 

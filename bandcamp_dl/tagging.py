@@ -27,7 +27,7 @@ def write_id3_tags(
     :param config: user config/args
     """
     title = track.title
-    logger.debug(f" Encoding process starting for '{title}'..")
+    logger.debug(f"Encoding process starting for '{title}'..")
 
     audio = mp3.MP3(tmp_path)
     _ = audio.delete()
@@ -72,4 +72,4 @@ def write_id3_tags(
 
     _ = audio.save(v1=2)
 
-    logger.debug(f" Encoding process finished for '{title}'..")
+    logger.debug(f"Encoding process finished for '{title}'..")

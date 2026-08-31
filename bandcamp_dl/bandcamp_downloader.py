@@ -50,10 +50,10 @@ class BandcampDownloader:
             output_path = tmp_path.with_suffix("")
             folder = output_path.parent
             if not folder.exists():
-                logger.debug(f" Directory doesn't exist for {output_path}, creating..")
+                logger.debug(f"Directory doesn't exist for {output_path}, creating..")
             folder.mkdir(parents=True, exist_ok=True)
 
-            logger.debug(f" Current file for track '{track.title}' on album '{album.title}':\n\t{tmp_path}")
+            logger.debug(f"Current file for track '{track.title}' on album '{album.title}':\n\t{tmp_path}")
 
             fetched_art = self._ensure_cover_art(progress=progress, dirname=folder, track_title=track.title)
             if fetched_art is not None:
@@ -132,7 +132,7 @@ class BandcampDownloader:
                     return None
                 logger.debug(f"Transient failure downloading album art for '{track_title}': {e}")
             if attempt < attempts_amt:
-                logger.debug(f"retrying in {delay:.0f}s..")
+                logger.debug(f"Retrying in {delay:.0f}s..")
                 time.sleep(delay)
         logger.warning(f"Couldn't download album art for '{track_title}' on '{progress.album.title}'")
         cover_path.unlink(missing_ok=True)
@@ -144,7 +144,7 @@ class BandcampDownloader:
         :param tmp_path: temporary path of the tmp mp3 file
         :param output_path: final path
         """
-        logger.debug(f" Renaming:\n\t{tmp_path} -to-> {output_path}")
+        logger.debug(f"Renaming:\n\t{tmp_path} -to-> {output_path}")
 
         if output_path.exists():
             logger.warning(f"Output file already exists, replacing it: {output_path}")
