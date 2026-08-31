@@ -128,14 +128,13 @@ class BandcampDownloader:
                 delay = retry_delay_amount(e, attempt)
                 if delay is None:
                     cover_path.unlink(missing_ok=True)
-                    print("Couldn't download album art.")
+                    logger.warning(f"Couldn't download album art for '{track_title}' on '{progress.album.title}'")
                     return None
                 logger.debug(f"Transient failure downloading album art for '{track_title}': {e}")
             if attempt < attempts_amt:
                 logger.debug(f"retrying in {delay:.0f}s..")
                 time.sleep(delay)
         logger.warning(f"Couldn't download album art for '{track_title}' on '{progress.album.title}'")
-        print("Couldn't download album art.")
         cover_path.unlink(missing_ok=True)
         return None
 

@@ -69,8 +69,10 @@ class BandcampParser:
             raise
 
         if not response.ok:
-            logger.error(f"Could not fetch {url}; status code: {response.status_code} ({response.reason})")
-            print(f"The Album/Track requested does not exist at: {url}")
+            logger.error(
+                f"The Album/Track requested does not exist at: {url};"
+                f" status code: {response.status_code} ({response.reason})"
+            )
             raise ValueError()
 
         try:

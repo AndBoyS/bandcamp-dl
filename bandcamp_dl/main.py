@@ -107,7 +107,7 @@ def main() -> None:
             if actual_config.ignore_errors:
                 print(f"Full album not available. Skipping {album.title} ...")
             else:
-                logger.exception(f"Full album not available for {album.title}")
+                logger.error(f"Full album not available for {album.title}")
                 sys.exit(1)
         else:
             album_list.append(album)
