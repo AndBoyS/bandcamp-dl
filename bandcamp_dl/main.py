@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import logging
 import sys
-from pathlib import Path
 from urllib.parse import urlparse
 
 from bandcamp_dl.bandcamp_downloader import BandcampDownloader
@@ -49,11 +48,7 @@ def main() -> None:
     logger.debug(f"Config/args: {json.dumps(vars(arguments), indent=4, default=str)}")
     logger.debug(f"Config after merging with user's config: {actual_config.model_dump_json(indent=4)}")
     if not bool(arguments.URL) and not bool(arguments.artist):
-        parser.print_usage()
-        _ = sys.stderr.write(
-            f"{Path(sys.argv[0]).name}: error: the following arguments are required: URL or --artist\n"
-        )
-        sys.exit(2)
+        parser.error("the following arguments are required: URL or --artist")
 
     bandcamp_parser = BandcampParser()
 
