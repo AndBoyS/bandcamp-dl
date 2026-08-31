@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -8,7 +9,7 @@ import requests
 
 from bandcamp_dl.config import AlbumInfo, ArtMode, Config
 from bandcamp_dl.const import VERSION
-from bandcamp_dl.download import TrackFileDownloader, TrackOutcome
+from bandcamp_dl.download import TrackFileDownloader, TrackOutcome, retry_delay_amount
 from bandcamp_dl.paths import template_to_path
 from bandcamp_dl.tagging import write_id3_tags
 from bandcamp_dl.utils import print_clean
@@ -54,6 +55,7 @@ class BandcampDownloader:
 
             logger.debug(f" Current file for track '{track.title}' on album '{album.title}':\n\t{tmp_path}")
 
+            # TODO: immutable progress?
             self._ensure_cover_art(progress=progress, dirname=folder, track_title=track.title)
 
             try:
@@ -104,18 +106,37 @@ class BandcampDownloader:
         :param track_title: title of the current track, used for error messages
         """
         cover_path = dirname / "cover.jpg"
-        # TODO: failed art GET leaves zero-byte cover.jpg behind, blocking future art attempts
-        if progress.album.art is not None and not cover_path.exists():
+        if progress.album.art is None:
+            return
+        if cover_path.exists() and cover_path.stat().st_size > 0:
+            progress.art_path = cover_path
+            return
+        attempts_amt = self.config.max_retries + 1
+        for attempt in range(1, attempts_amt + 1):
+            delay = min(2**attempt, 5)
             try:
-                with cover_path.open("wb") as f:
-                    r = self.session.get(progress.album.art, headers=self.headers)
-                    _ = f.write(r.content)
-                progress.art_path = cover_path
-            except Exception:
-                logger.exception(
-                    f"Couldn't download album art for track '{track_title}' on album '{progress.album.title}'"
-                )
-                print("Couldn't download album art.")
+                r = self.session.get(progress.album.art, headers=self.headers)
+                r.raise_for_status()
+                if len(r.content) == 0:
+                    logger.debug(f"Empty album art response for '{track_title}' on '{progress.album.title}'")
+                else:
+                    with cover_path.open("wb") as f:
+                        _ = f.write(r.content)
+                    progress.art_path = cover_path
+                    return
+            except Exception as e:
+                delay = retry_delay_amount(e, attempt)
+                if delay is None:
+                    cover_path.unlink(missing_ok=True)
+                    print("Couldn't download album art.")
+                    return
+                logger.debug(f"Transient failure downloading album art for '{track_title}': {e}")
+            if attempt < attempts_amt:
+                logger.debug(f"retrying in {delay:.0f}s..")
+                time.sleep(delay)
+        logger.warning(f"Couldn't download album art for '{track_title}' on '{progress.album.title}'")
+        print("Couldn't download album art.")
+        cover_path.unlink(missing_ok=True)
 
     def _finalize_track(self, tmp_path: Path, output_path: Path) -> None:
         """Rename the completed tmp file to its final output path

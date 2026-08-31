@@ -19,12 +19,12 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_TRANSIENT_ERRORS = (
+TRANSIENT_ERRORS = (
     requests.exceptions.ConnectionError,
     requests.exceptions.Timeout,
     requests.exceptions.ChunkedEncodingError,
 )
-_RETRYABLE_STATUSES = {408, 429, 500, 502, 503, 504}
+RETRYABLE_STATUSES = {408, 429, 500, 502, 503, 504}
 _RETRY_AFTER_CAP = 30.0
 
 
@@ -40,22 +40,32 @@ class TrackOutcome(IntEnum):
     SKIPPED = 2
 
 
-def _retry_delay_amount(e: requests.HTTPError, attempt: int) -> float:
-    """Get delay amount before retrying a retryable HTTP error, honoring the server's Retry-After header
+def retry_delay_amount(e: Exception, attempt: int) -> float | None:
+    """Return the seconds to wait before retrying a failed attempt, or None when it is permanent
 
-    :param e: HTTP error carrying the failed response
+    Retryable failures are transient connection issues and retryable HTTP statuses, honoring the
+    server's Retry-After header where present.
+
+    :param e: exception raised by the failed attempt
     :param attempt: 1-based attempt number, used for the default exponential backoff
-    :return: seconds to wait before the next attempt
+    :return: seconds to wait before the next attempt, or None when the failure is permanent
     """
-    response = e.response
-    if isinstance(response, Response):
-        retry_after = response.headers.get("Retry-After")
+    default_delay = min(2**attempt, 5)
+    if isinstance(e, requests.HTTPError):
+        response = e.response
+        status = response.status_code if isinstance(response, Response) else None
+        if status is None or status not in RETRYABLE_STATUSES:
+            return None
+        retry_after = response.headers.get("Retry-After") if isinstance(response, Response) else None
         if retry_after is not None:
             with contextlib.suppress(ValueError):
                 retry_after = float(retry_after)
                 if math.isfinite(retry_after):
                     return min(max(retry_after, 0.0), _RETRY_AFTER_CAP)
-    return min(2**attempt, 5)
+        return default_delay
+    if isinstance(e, TRANSIENT_ERRORS):
+        return default_delay
+    return None
 
 
 class TrackFileDownloader:
@@ -98,22 +108,13 @@ class TrackFileDownloader:
                     return TrackOutcome.COMPLETED
                 if attempt < attempts_amt:
                     print(f"{output_path.name} is incomplete, retrying..")
-            except requests.HTTPError as e:
-                last_error = e
-                response = e.response
-                status = response.status_code if isinstance(response, Response) else None
-                if status is not None and status in _RETRYABLE_STATUSES:
-                    delay = _retry_delay_amount(e, attempt)
-                    logger.debug(f"HTTP {status} downloading '{track.title}'")
-                else:
-                    print("Downloading failed..")
-                    raise
             except Exception as e:
                 last_error = e
-                if not isinstance(e, _TRANSIENT_ERRORS):
+                delay = retry_delay_amount(e, attempt)
+                if delay is None:
                     print("Downloading failed..")
                     raise
-                logger.debug(f"Transient failure downloading '{track.title}': {e}")
+                logger.debug(f"Retrying '{track.title}' after failure: {e}")
             if attempt < attempts_amt:
                 logger.debug(f"retrying in {delay:.0f}s..")
                 time.sleep(delay)
