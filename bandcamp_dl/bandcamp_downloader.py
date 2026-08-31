@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import requests
@@ -17,7 +17,7 @@ from bandcamp_dl.utils import print_clean
 logger = logging.getLogger(__name__)
 
 
-@dataclass
+@dataclass(frozen=True)
 class AlbumDownloadProgress:
     album: AlbumInfo
     num_tracks: int
@@ -43,7 +43,7 @@ class BandcampDownloader:
         """
         progress = AlbumDownloadProgress(album=album, num_tracks=len(album.tracks))
         for track_index, track in enumerate(album.tracks, start=1):
-            progress.track_num = track_index
+            progress = replace(progress, track_num=track_index)
 
             filepath = template_to_path(track=track, album=album, config=self.config)
             tmp_path = filepath.with_name(f"{filepath.name}.tmp")
@@ -55,8 +55,9 @@ class BandcampDownloader:
 
             logger.debug(f" Current file for track '{track.title}' on album '{album.title}':\n\t{tmp_path}")
 
-            # TODO: immutable progress?
-            self._ensure_cover_art(progress=progress, dirname=folder, track_title=track.title)
+            fetched_art = self._ensure_cover_art(progress=progress, dirname=folder, track_title=track.title)
+            if fetched_art is not None:
+                progress = replace(progress, art_path=fetched_art)
 
             try:
                 outcome = self._downloader.download_track(tmp_path, output_path, track=track, progress=progress)
@@ -98,19 +99,19 @@ class BandcampDownloader:
 
         return True
 
-    def _ensure_cover_art(self, *, progress: AlbumDownloadProgress, dirname: Path, track_title: str) -> None:
-        """Fetch the album cover into the track's directory once and track it on the per-album state
+    def _ensure_cover_art(self, *, progress: AlbumDownloadProgress, dirname: Path, track_title: str) -> Path | None:
+        """Fetch the album cover into the track's directory once and report its path
 
-        :param progress: mutable per-album download progress
+        :param progress: per-album download progress, only read
         :param dirname: directory of the current track
         :param track_title: title of the current track, used for error messages
+        :return: path of the available cover image, or None when there is none
         """
         cover_path = dirname / "cover.jpg"
         if progress.album.art is None:
-            return
+            return None
         if cover_path.exists() and cover_path.stat().st_size > 0:
-            progress.art_path = cover_path
-            return
+            return cover_path
         attempts_amt = self.config.max_retries + 1
         for attempt in range(1, attempts_amt + 1):
             delay = min(2**attempt, 5)
@@ -122,14 +123,13 @@ class BandcampDownloader:
                 else:
                     with cover_path.open("wb") as f:
                         _ = f.write(r.content)
-                    progress.art_path = cover_path
-                    return
+                    return cover_path
             except Exception as e:
                 delay = retry_delay_amount(e, attempt)
                 if delay is None:
                     cover_path.unlink(missing_ok=True)
                     print("Couldn't download album art.")
-                    return
+                    return None
                 logger.debug(f"Transient failure downloading album art for '{track_title}': {e}")
             if attempt < attempts_amt:
                 logger.debug(f"retrying in {delay:.0f}s..")
@@ -137,6 +137,7 @@ class BandcampDownloader:
         logger.warning(f"Couldn't download album art for '{track_title}' on '{progress.album.title}'")
         print("Couldn't download album art.")
         cover_path.unlink(missing_ok=True)
+        return None
 
     def _finalize_track(self, tmp_path: Path, output_path: Path) -> None:
         """Rename the completed tmp file to its final output path
