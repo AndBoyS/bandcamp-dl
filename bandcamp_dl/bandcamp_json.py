@@ -1,55 +1,49 @@
 from __future__ import annotations
 
-import html
 import logging
-import re
 from typing import Any
 
 import orjson
+from bs4 import BeautifulSoup
 
 logger = logging.getLogger(__name__)
 
-_SCRIPT_TAG_RE = re.compile(r"<script\b([^>]*)>(.*?)</script>", re.DOTALL)
-_DATA_TRALBUM_RE = re.compile(r'\bdata-tralbum="([^"]*)"')
-_PAGEDATA_TAG_RE = re.compile(r"<div\b[^>]*\bid=\"pagedata\"[^>]*>")
 
-
-def extract_page_json(raw_html: str) -> list[dict[str, Any]]:
+def extract_page_json(body: BeautifulSoup) -> list[dict[str, Any]]:
     """Grab the needed JSON data from the page."""
-    json_data = [_get_pagedata(raw_html)]
-    json_data.extend(_get_embedded_json(raw_html))
+    json_data = [_get_pagedata(body)]
+    json_data.extend(_get_embedded_json(body))
     return json_data
 
 
-def _get_pagedata(raw_html: str) -> dict[str, Any]:
+def _get_pagedata(body: BeautifulSoup) -> dict[str, Any]:
     logger.debug("Grab pagedata JSON..")
-    tag_match = _PAGEDATA_TAG_RE.search(raw_html)
-    if tag_match is None:
+    pagedata_tag = body.find("div", {"id": "pagedata"})
+    if pagedata_tag is None:
         raise ValueError("Could not find pagedata div on Bandcamp page")
-    blob_match = re.compile(r'\bdata-blob="([^"]*)"').search(tag_match.group(0))
-    if blob_match is None:
-        raise ValueError("Could not find data-blob attribute on pagedata div")
-    pagedata = html.unescape(blob_match.group(1))
+    pagedata = pagedata_tag["data-blob"]
+    assert isinstance(pagedata, str)
     return parse_page_json(pagedata)
 
 
-def _get_embedded_json(raw_html: str) -> list[dict[str, Any]]:
+def _get_embedded_json(body: BeautifulSoup) -> list[dict[str, Any]]:
     """Get script elements containing the data we need."""
     logger.debug("Grabbing embedded scripts..")
     parsed: list[dict[str, Any]] = []
     ld_json_found = False
-    for attrs, content in _SCRIPT_TAG_RE.findall(raw_html):
-        if "application/ld+json" in attrs:
+    for script in body.find_all("script"):
+        if script.get("type") == "application/ld+json":
             if ld_json_found:
                 continue
-            if content.strip() != "":
+            blob = script.get_text()
+            if blob.strip() != "":
                 ld_json_found = True
-            blob = content
         else:
-            album_info_match = _DATA_TRALBUM_RE.search(attrs)
-            if album_info_match is None:
+            album_info = script.get("data-tralbum")
+            if album_info is None:
                 continue
-            blob = html.unescape(album_info_match.group(1))
+            assert isinstance(album_info, str)
+            blob = album_info
         if blob.strip() == "":
             logger.warning("Skipping empty JSON blob on page")
             continue
