@@ -86,7 +86,7 @@ class BandcampParser:
 
         page_json: dict[str, Any] = {}
         for entry in bandcamp_json:
-            page_json = {**page_json, **json.loads(entry)}
+            page_json = {**page_json, **entry}
         logger.debug("BandcampJSON generated..")
 
         logger.debug("Generating Album..")

@@ -1,31 +1,32 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 
-import demjson3
+import orjson
 from bs4 import BeautifulSoup
 
 logger = logging.getLogger(__name__)
 
 
-def extract_page_json(body: BeautifulSoup) -> list[str]:
+def extract_page_json(body: BeautifulSoup) -> list[dict[str, Any]]:
     """Grab the needed JSON data from the page."""
     json_data = [_get_pagedata(body)]
     json_data.extend(_get_embedded_json(body))
     return json_data
 
 
-def _get_pagedata(body: BeautifulSoup) -> str:
+def _get_pagedata(body: BeautifulSoup) -> dict[str, Any]:
     logger.debug("Grab pagedata JSON..")
     pagedata_tag = body.find("div", {"id": "pagedata"})
     if pagedata_tag is None:
         raise ValueError("Could not find pagedata div on Bandcamp page")
     pagedata = pagedata_tag["data-blob"]
     assert isinstance(pagedata, str)
-    return pagedata
+    return parse_page_json(pagedata)
 
 
-def _get_embedded_json(body: BeautifulSoup) -> list[str]:
+def _get_embedded_json(body: BeautifulSoup) -> list[dict[str, Any]]:
     """Get script elements containing the data we need."""
     logger.debug("Grabbing embedded scripts..")
     ld_json_script = body.find("script", {"type": "application/ld+json"})
@@ -37,12 +38,12 @@ def _get_embedded_json(body: BeautifulSoup) -> list[str]:
         if album_info is not None:
             assert isinstance(album_info, str)
             embedded_scripts_raw.append(album_info)
-    return [_js_to_json(script) for script in embedded_scripts_raw if script is not None]
+    return [parse_page_json(script) for script in embedded_scripts_raw if script is not None]
 
 
-def _js_to_json(js_data: str) -> str:
-    """Convert a JavaScript dictionary to JSON."""
-    logger.debug("Converting JS to JSON..")
-    # Decode with demjson first to reformat keys and lists.
-    decoded_js = demjson3.decode(js_data)
-    return demjson3.encode(decoded_js)
+def parse_page_json(js_data: str) -> dict[str, Any]:
+    """Parse a Bandcamp page JSON blob."""
+    logger.debug("Parsing page JSON..")
+    data = orjson.loads(js_data)
+    assert isinstance(data, dict)
+    return data
