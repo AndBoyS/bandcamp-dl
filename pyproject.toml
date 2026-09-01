@@ -1,6 +1,3 @@
-exclude-newer = "7 days"
-exclude-newer-package = { pyrefly = false }
-
 [project]
 name = "bandcamp-downloader"
 authors = [
@@ -47,6 +44,10 @@ bandcamp-dl = "bandcamp_dl.main:main"
 [build-system]
 requires = ["uv_build~=0.12.3"]
 build-backend = "uv_build"
+
+[tool.uv]
+exclude-newer = "7 days"
+exclude-newer-package = { pyrefly = false }
 
 [tool.uv.build-backend]
 module-name = "bandcamp_dl"
