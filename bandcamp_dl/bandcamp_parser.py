@@ -75,16 +75,7 @@ class BandcampParser:
             )
             raise ValueError()
 
-        try:
-            soup = bs4.BeautifulSoup(response.text, "lxml")
-        except bs4.FeatureNotFound:
-            logger.debug("lxml parser unavailable, falling back to html.parser")
-
-            try:
-                soup = bs4.BeautifulSoup(response.text, "html.parser")
-            except Exception:
-                logger.exception("Error parsing web page")
-                raise
+        soup = bs4.BeautifulSoup(response.text, "lxml")
 
         logger.debug("Generating BandcampJSON..")
         try:
@@ -250,11 +241,7 @@ class BandcampParser:
 
         logger.debug(f"Fetching track lyrics for {track_url}..")
         track_page = self.session.get(lyrics_url, headers=self.headers)
-        try:
-            track_soup = bs4.BeautifulSoup(track_page.text, "lxml")
-        except bs4.FeatureNotFound:
-            logger.debug("lxml parser unavailable, falling back to html.parser")
-            track_soup = bs4.BeautifulSoup(track_page.text, "html.parser")
+        track_soup = bs4.BeautifulSoup(track_page.text, "lxml")
         track_lyrics = track_soup.find("div", {"class": "lyricsText"})
         if track_lyrics is not None:
             logger.debug("Lyrics retrieved..")
@@ -354,11 +341,7 @@ class BandcampParser:
             logger.exception(f"Could not fetch artist page {music_page_url}")
             return ([], ErrorStatus.ERROR)
 
-        try:
-            soup = bs4.BeautifulSoup(response.text, "lxml")
-        except bs4.FeatureNotFound:
-            logger.debug("lxml parser unavailable, falling back to html.parser")
-            soup = bs4.BeautifulSoup(response.text, "html.parser")
+        soup = bs4.BeautifulSoup(response.text, "lxml")
 
         music_grid = soup.find("ol", {"id": "music-grid"})
         if music_grid is None:

@@ -17,6 +17,7 @@ classifiers = [
 dependencies = [
   "beautifulsoup4 >= 4.13.0b2",
   "demjson3 >= 3.0.6",
+  "lxml>=5.0.0",
   "mutagen >= 1.47.0",
   "pydantic>=2.10.6",
   "requests >= 2.32.3",
