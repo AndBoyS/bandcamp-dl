@@ -12,7 +12,7 @@ import requests
 from requests import Response
 
 from bandcamp_dl.config import Config, TrackInfo
-from bandcamp_dl.utils import print_clean
+from bandcamp_dl.utils import print_progress
 
 if TYPE_CHECKING:
     from bandcamp_dl.bandcamp_downloader import AlbumDownloadProgress
@@ -143,10 +143,10 @@ class TrackFileDownloader:
                 dl += len(data)
                 _ = f.write(data)
                 if not self.config.debug and bool(file_length):
-                    done = int(50 * dl / file_length)
-                    done = min(done, 50)
-                    print_clean(
-                        f"\r({progress.track_num}/{progress.num_tracks}) "
-                        f"[{'=' * done}{' ' * (50 - done)}] :: "
-                        f"Downloading: {output_path.stem}"
+                    print_progress(
+                        track_num=progress.track_num,
+                        num_tracks=progress.num_tracks,
+                        label=f"Downloading: {output_path.stem}",
+                        done=dl,
+                        total=file_length,
                     )
