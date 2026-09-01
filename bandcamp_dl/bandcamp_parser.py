@@ -75,11 +75,9 @@ class BandcampParser:
             )
             raise ValueError()
 
-        soup = bs4.BeautifulSoup(response.text, "lxml")
-
         logger.debug("Generating BandcampJSON..")
         try:
-            bandcamp_json = extract_page_json(soup)
+            bandcamp_json = extract_page_json(response.text)
         except Exception:
             logger.exception("Error parsing web page")
             raise
@@ -218,13 +216,15 @@ class BandcampParser:
             for t in tracks_raw
         ]
 
+        soup: bs4.BeautifulSoup | None = bs4.BeautifulSoup(response.text, "lxml") if add_art else None
+
         album = AlbumInfo(
             tracks=[t for t in tracks if t is not None],
             title=album_title,
             artist=page_json["artist"],
             label=label,
             all_tracks_have_url=all(t is not None for t in tracks),
-            art=self.get_album_art(soup=soup, quality=cover_quality) if add_art else None,
+            art=self.get_album_art(soup=soup, quality=cover_quality) if soup is not None else None,
             date=str(datetime.datetime.strptime(album_date, "%d %b %Y %H:%M:%S GMT").year),
             url=url,
             genres="; ".join(page_json["keywords"]) if add_genres else None,
