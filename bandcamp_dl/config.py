@@ -97,7 +97,7 @@ SPACE_CHAR = "-"
 
 
 class Config(GoodBaseModel):
-    base_dir: Path = USER_HOME
+    base_dir: Path = Path(".")
     template: str = TEMPLATE
     overwrite: bool = False
     art_mode: ArtMode = ArtMode.FILE
