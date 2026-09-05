@@ -62,8 +62,10 @@ def add_boolean_argument(
     )
 
 
-def parse_args(raw_args: list[str] | None = None) -> tuple[argparse.ArgumentParser, AllCliArgs]:
-    parser = argparse.ArgumentParser()
+def parse_args(
+    raw_args: list[str] | None = None, prog: str | None = None
+) -> tuple[argparse.ArgumentParser, AllCliArgs]:
+    parser = argparse.ArgumentParser(prog=prog)
     _ = parser.add_argument("URL", nargs="*", help="One or more Bandcamp album/track URLs")
     _ = parser.add_argument("-v", "--version", action="store_true", help="Show version")
     _ = parser.add_argument("--artist", help="Specify an artist's slug to download their full discography.")

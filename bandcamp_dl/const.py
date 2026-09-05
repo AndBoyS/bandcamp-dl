@@ -17,7 +17,8 @@ else:
     VERSION = importlib.metadata.version("bandcamp-downloader")
 
 # TODO: update metadata
-USER_AGENT = f"bandcamp-dl/{VERSION} (https://github.com/evolution0/bandcamp-dl)"
+PROG = "bandcamp-dl"
+USER_AGENT = f"{PROG}/{VERSION} (https://github.com/evolution0/bandcamp-dl)"
 
 
 class ErrorStatus(Enum):

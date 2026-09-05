@@ -50,54 +50,72 @@ bandcamp-dl is a small command-line app to download audio from bandcamp.com. It 
 
 ```text
 Usage:
-    bandcamp-dl [options] [URL]
+    bandcamp-dl [options] [URL...]
 
 Arguments:
-    URL         Bandcamp album/track URL
+    URL         One or more Bandcamp album/track URLs
 ```
 
 ## Options
 
 ```text
-Options:
+usage: bandcamp-dl [-h] [-v] [--artist ARTIST] [--track TRACK] [--album ALBUM]
+                   [--template TEMPLATE] [--base-dir BASE_DIR] [-f] [--cover-quality {0,10,16}]
+                   [-c OK_CHARS] [-s SPACE_CHAR] [-x {lower,upper,camel,none}]
+                   [--truncate-album LENGTH] [--truncate-track LENGTH] [--max-retries MAX_RETRIES]
+                   [--ignore-errors] [-d] [-o] [--art-mode {none,file,embed,file-embed}] [-n] [-r]
+                   [--art-as-file] [-e] [-g] [--untitled-path-from-slug] [-y] [-a] [-k]
+                   [--no-confirm] [--embed-genres]
+                   [URL ...]
+
+positional arguments:
+  URL                   One or more Bandcamp album/track URLs
+
+options:
   -h, --help            show this help message and exit
   -v, --version         Show version
-  -d, --debug           Verbose logging
   --artist ARTIST       Specify an artist's slug to download their full discography.
-  --track TRACK         Specify a track's slug to download a single track. Must be used with --artist.
-  --album ALBUM         Specify an album's slug to download a single album. Must be used with --artist.
-  --template TEMPLATE   Output filename template, default: %{artist}/%{album}/%{track} - %{title}
+  --track TRACK         Specify a track's slug to download a single track. Must be used with
+                        --artist.
+  --album ALBUM         Specify an album's slug to download a single album. Must be used with
+                        --artist.
+  --template TEMPLATE   Output filename template
   --base-dir BASE_DIR   Base location of which all files are downloaded
   -f, --full-album      Download only if all tracks are available
-  -o, --overwrite       Overwrite tracks that already exist. Default is False.
+  --cover-quality {0,10,16}
+                        Set the cover art quality
+  -c OK_CHARS, --ok-chars OK_CHARS
+                        Specify allowed chars in slugify
+  -s SPACE_CHAR, --space-char SPACE_CHAR
+                        Specify the char to use in place of spaces
+  -x {lower,upper,camel,none}, --case-convert {lower,upper,camel,none}
+                        Specify the char case conversion logic
+  --truncate-album LENGTH
+                        Truncate album title; 0 for no limit
+  --truncate-track LENGTH
+                        Truncate track title; 0 for no limit
+  --max-retries MAX_RETRIES
+                        Maximum retries per failed download; 0 for a single attempt
+  --ignore-errors       Continue downloading when an parsing/downloading error occurs
+  -d, --debug           Verbose logging
+  -o, --overwrite       Overwrite tracks that already exist
   --art-mode {none,file,embed,file-embed}
-                          Album art handling: 'none' skips art, 'file' keeps cover.jpg (default), 'embed' embeds it
-                          in tags and removes the file, 'file-embed' embeds it and keeps cover.jpg
-  -n, --no-art          Alias for --art-mode none. Skip grabbing album art
+                        Album art handling: 'none' skips art, 'file' downloads cover.jpg
+                        (default), 'embed' embeds it in tags and removes the file, 'file-embed'
+                        combines both
+  -n, --no-art          Alias for --art-mode none
+  -r, --embed-art       Alias for --art-mode embed
+  --art-as-file         Alias for --art-mode file
   -e, --embed-lyrics    Embed track lyrics (If available)
   -g, --group           Use album/track Label as iTunes grouping
-  -r, --embed-art       Alias for --art-mode embed. Embed album art (If available)
-  --art-as-file         Alias for --art-mode file. Keep album art as cover.jpg
-  --cover-quality {0,10,16}
-                          Set the cover art quality. 0 is source, 10 is album page (1200x1200), 16 is default embed
-                          (700x700).
+  --untitled-path-from-slug
+                        Use the URL slug for untitled album paths
   -y, --no-slugify      Disable slugification of track, album, and artist names
-  -c OK_CHARS, --ok-chars OK_CHARS
-                          Specify allowed chars in slugify, default: -_~
-  -s SPACE_CHAR, --space-char SPACE_CHAR
-                          Specify the char to use in place of spaces, default: -
-  -a, --ascii-only      Only allow ASCII chars (北京 (capital of china) -> bei-jing-capital-of-china)
+  -a, --ascii-only      Only allow ASCII chars
   -k, --keep-spaces     Retain whitespace in filenames
-  -x {lower,upper,camel,none}, --case-convert {lower,upper,camel,none}
-                          Specify the char case conversion logic, default: lower
   --no-confirm          Override confirmation prompts. Use with caution
   --embed-genres        Embed album/track genres
-  --truncate-album LENGTH
-                          Truncate album title to a maximum length. 0 for no limit.
-  --truncate-track LENGTH
-                          Truncate track title to a maximum length. 0 for no limit.
 ```
-
 
 ## Filename Template
 
