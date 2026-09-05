@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import logging
+import threading
 import time
 from dataclasses import dataclass, replace
+from functools import partial
 from pathlib import Path
 
 import requests
+from requests import Session
 
 from bandcamp_dl.config import AlbumInfo, ArtMode, Config
 from bandcamp_dl.const import VERSION
@@ -15,6 +18,8 @@ from bandcamp_dl.tagging import write_id3_tags
 from bandcamp_dl.utils import print_clean
 
 logger = logging.getLogger(__name__)
+
+PRECONNECT_TIMEOUT_SECONDS = 10
 
 
 @dataclass(frozen=True)
@@ -28,12 +33,38 @@ class AlbumDownloadProgress:
 class BandcampDownloader:
     """Orchestrates path resolution, downloading and tagging for an album download run"""
 
-    def __init__(self, config: Config) -> None:
+    def __init__(self, config: Config, *, session: requests.Session | None = None) -> None:
         # TODO: update version
         self.headers = {"User-Agent": f"bandcamp-dl/{VERSION} (https://github.com/evolution0/bandcamp-dl)"}
-        self.session = requests.Session()
+        self.session = session if session is not None else requests.Session()
         self.config = config
         self._downloader = TrackFileDownloader(config, session=self.session, headers=self.headers)
+        self._preconnect_threads: dict[str, threading.Thread] = {}
+
+    def preconnect(self, *hosts: str) -> None:
+        """Warm connection pools for the given hosts in background threads
+
+        TLS handshakes can take same time - doing them in parallel while parsing
+
+        :param hosts: hostnames to establish pooled connections for
+        """
+        for host in hosts:
+            if host in self._preconnect_threads:
+                continue
+            thread = threading.Thread(
+                target=partial(_warm_connection, host=host, session=self.session, headers=self.headers),
+                daemon=True,
+            )
+            self._preconnect_threads[host] = thread
+            thread.start()
+
+    def wait_for_preconnects(self) -> None:
+        """Block until all preconnect threads have finished their (attempted) connections"""
+        start_time = time.monotonic()
+        for host, thread in self._preconnect_threads.items():
+            elapsed = time.monotonic() - start_time
+            thread.join(timeout=max(0.0, PRECONNECT_TIMEOUT_SECONDS - elapsed))
+            logger.debug(f"Preconnect to {host} settled")
 
     def download_album(self, album: AlbumInfo) -> bool:
         """Start album download process
@@ -41,6 +72,7 @@ class BandcampDownloader:
         :param album: album info
         :return: True if successful
         """
+        self.wait_for_preconnects()
         progress = AlbumDownloadProgress(album=album, num_tracks=len(album.tracks))
         for track_index, track in enumerate(album.tracks, start=1):
             progress = replace(progress, track_num=track_index)
@@ -150,3 +182,15 @@ class BandcampDownloader:
             logger.warning(f"Output file already exists, replacing it: {output_path}")
 
         _ = tmp_path.replace(output_path)
+
+
+def _warm_connection(host: str, *, session: Session, headers: dict[str, str]) -> None:
+    url = f"https://{host}/"
+    try:
+        start = time.monotonic()
+        r = session.head(url, headers=headers, timeout=PRECONNECT_TIMEOUT_SECONDS)
+        elapsed_ms = (time.monotonic() - start) * 1000
+        logger.debug(f"Preconnected to {host} ({r.status_code}) in {elapsed_ms:.0f}ms")
+        r.close()
+    except Exception as e:
+        logger.debug(f"Preconnect to {host} failed, connection will be established on demand: {e}")

@@ -51,6 +51,9 @@ def main() -> None:
         parser.error("the following arguments are required: URL or --artist")
 
     bandcamp_parser = BandcampParser()
+    bandcamp_downloader = BandcampDownloader(actual_config, session=bandcamp_parser.session)
+
+    bandcamp_downloader.preconnect("f4.bcbits.com", "t4.bcbits.com")
 
     urls: list[str]
     if arguments.artist is not None and arguments.album is not None:
@@ -108,7 +111,6 @@ def main() -> None:
             album_list.append(album)
 
     logger.debug(f"Preparing download process for {len(album_list)} album(s)..")
-    bandcamp_downloader = BandcampDownloader(actual_config)
     for album in album_list:
         success = True
         if not album.all_tracks_have_url and not actual_config.no_confirm:
