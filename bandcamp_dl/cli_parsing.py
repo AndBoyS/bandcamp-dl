@@ -64,7 +64,7 @@ def add_boolean_argument(
 
 def parse_args(raw_args: list[str] | None = None) -> tuple[argparse.ArgumentParser, AllCliArgs]:
     parser = argparse.ArgumentParser()
-    _ = parser.add_argument("URL", nargs="*", help="Bandcamp album/track URL")
+    _ = parser.add_argument("URL", nargs="*", help="One or more Bandcamp album/track URLs")
     _ = parser.add_argument("-v", "--version", action="store_true", help="Show version")
     _ = parser.add_argument("--artist", help="Specify an artist's slug to download their full discography.")
     _ = parser.add_argument(
@@ -80,7 +80,12 @@ def parse_args(raw_args: list[str] | None = None) -> tuple[argparse.ArgumentPars
     _ = parser.add_argument("-c", "--ok-chars", help="Specify allowed chars in slugify")
     _ = parser.add_argument("-s", "--space-char", help="Specify the char to use in place of spaces")
     _ = parser.add_argument(
-        "-x", "--case-convert", dest="case_mode", type=CaseType, help="Specify the char case conversion logic"
+        "-x",
+        "--case-convert",
+        dest="case_mode",
+        type=CaseType,
+        choices=CaseType,
+        help="Specify the char case conversion logic",
     )
     _ = parser.add_argument("--truncate-album", type=int, metavar="LENGTH", help="Truncate album title; 0 for no limit")
     _ = parser.add_argument("--truncate-track", type=int, metavar="LENGTH", help="Truncate track title; 0 for no limit")
@@ -108,6 +113,7 @@ def parse_args(raw_args: list[str] | None = None) -> tuple[argparse.ArgumentPars
         "--art-mode",
         dest="art_mode",
         type=ArtMode,
+        choices=ArtMode,
         default=None,
         help="Album art handling: 'none' skips art, 'file' downloads cover.jpg (default), 'embed' embeds it in tags and"
         " removes the file, 'file-embed' combines both",
