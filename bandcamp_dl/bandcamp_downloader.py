@@ -11,7 +11,7 @@ import requests
 from requests import Session
 
 from bandcamp_dl.config import AlbumInfo, ArtMode, Config
-from bandcamp_dl.const import VERSION
+from bandcamp_dl.const import USER_AGENT, VERSION
 from bandcamp_dl.download import TrackFileDownloader, TrackOutcome, retry_delay_amount
 from bandcamp_dl.paths import template_to_path
 from bandcamp_dl.tagging import write_id3_tags
@@ -34,11 +34,10 @@ class BandcampDownloader:
     """Orchestrates path resolution, downloading and tagging for an album download run"""
 
     def __init__(self, config: Config, *, session: requests.Session | None = None) -> None:
-        # TODO: update version
-        self.headers = {"User-Agent": f"bandcamp-dl/{VERSION} (https://github.com/evolution0/bandcamp-dl)"}
         self.session = session if session is not None else requests.Session()
+        self.session.headers.update({"User-Agent": USER_AGENT})
         self.config = config
-        self._downloader = TrackFileDownloader(config, session=self.session, headers=self.headers)
+        self._downloader = TrackFileDownloader(config, session=self.session)
         self._preconnect_threads: dict[str, threading.Thread] = {}
 
     def preconnect(self, *hosts: str) -> None:
@@ -52,7 +51,7 @@ class BandcampDownloader:
             if host in self._preconnect_threads:
                 continue
             thread = threading.Thread(
-                target=partial(_warm_connection, host=host, session=self.session, headers=self.headers),
+                target=partial(_warm_connection, host=host, session=self.session),
                 daemon=True,
             )
             self._preconnect_threads[host] = thread
@@ -148,7 +147,7 @@ class BandcampDownloader:
         for attempt in range(1, attempts_amt + 1):
             delay = min(2**attempt, 5)
             try:
-                r = self.session.get(progress.album.art, headers=self.headers)
+                r = self.session.get(progress.album.art)
                 r.raise_for_status()
                 if len(r.content) == 0:
                     logger.debug(f"Empty album art response for '{track_title}' on '{progress.album.title}'")
@@ -184,11 +183,11 @@ class BandcampDownloader:
         _ = tmp_path.replace(output_path)
 
 
-def _warm_connection(host: str, *, session: Session, headers: dict[str, str]) -> None:
+def _warm_connection(host: str, *, session: Session) -> None:
     url = f"https://{host}/"
     try:
         start = time.monotonic()
-        r = session.head(url, headers=headers, timeout=PRECONNECT_TIMEOUT_SECONDS)
+        r = session.head(url, timeout=PRECONNECT_TIMEOUT_SECONDS)
         elapsed_ms = (time.monotonic() - start) * 1000
         logger.debug(f"Preconnected to {host} ({r.status_code}) in {elapsed_ms:.0f}ms")
         r.close()

@@ -13,7 +13,7 @@ from bs4.element import Tag
 
 from bandcamp_dl.bandcamp_json import extract_page_json
 from bandcamp_dl.config import AlbumInfo, TrackInfo
-from bandcamp_dl.const import VERSION, ErrorStatus
+from bandcamp_dl.const import USER_AGENT, ErrorStatus
 from bandcamp_dl.custom_ssl import CUSTOM_SSL_CTX, SSLAdapter
 
 logger = logging.getLogger(__name__)
@@ -34,11 +34,9 @@ class TrackRaw(TypedDict, total=False):
 
 class BandcampParser:
     def __init__(self) -> None:
-        # TODO: update version
-        self.headers = {"User-Agent": f"bandcamp-dl/{VERSION} (https://github.com/evolution0/bandcamp-dl)"}
-
         # Mount the adapter with the custom SSL context to the session
         self.session = requests.Session()
+        self.session.headers.update({"User-Agent": USER_AGENT})
         self.adapter = SSLAdapter(ssl_context=CUSTOM_SSL_CTX)
         self.session.mount("https://", self.adapter)
 
@@ -63,7 +61,7 @@ class BandcampParser:
 
         logger.debug(f"Starting to parse {url}")
         try:
-            response = self.session.get(url, headers=self.headers)
+            response = self.session.get(url)
         except requests.exceptions.MissingSchema:
             logger.warning(f"Invalid URL schema: {url}")
             raise
@@ -240,7 +238,7 @@ class BandcampParser:
         lyrics_url = f"{track_url}#lyrics"
 
         logger.debug(f"Fetching track lyrics for {track_url}..")
-        track_page = self.session.get(lyrics_url, headers=self.headers)
+        track_page = self.session.get(lyrics_url)
         track_soup = bs4.BeautifulSoup(track_page.text, "lxml")
         track_lyrics = track_soup.find("div", {"class": "lyricsText"})
         if track_lyrics is not None:
@@ -336,7 +334,7 @@ class BandcampParser:
         logger.info(f"Scraping discography from: {music_page_url}")
 
         try:
-            response = self.session.get(music_page_url, headers=self.headers)
+            response = self.session.get(music_page_url)
         except requests.exceptions.RequestException:
             logger.exception(f"Could not fetch artist page {music_page_url}")
             return ([], ErrorStatus.ERROR)

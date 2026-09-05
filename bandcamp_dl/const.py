@@ -16,6 +16,9 @@ if pyproject_path.exists():
 else:
     VERSION = importlib.metadata.version("bandcamp-downloader")
 
+# TODO: update metadata
+USER_AGENT = f"bandcamp-dl/{VERSION} (https://github.com/evolution0/bandcamp-dl)"
+
 
 class ErrorStatus(Enum):
     ERROR = 1

@@ -71,10 +71,9 @@ def retry_delay_amount(e: Exception, attempt: int) -> float | None:
 class TrackFileDownloader:
     """Streams track files to disk with retry/backoff and progress display"""
 
-    def __init__(self, config: Config, *, session: requests.Session, headers: dict[str, str]) -> None:
+    def __init__(self, config: Config, *, session: requests.Session) -> None:
         self.config = config
         self.session = session
-        self.headers = headers
 
     def download_track(
         self, tmp_path: Path, output_path: Path, *, track: TrackInfo, progress: AlbumDownloadProgress
@@ -96,7 +95,7 @@ class TrackFileDownloader:
                 return TrackOutcome.SKIPPED
             delay = min(2**attempt, 5)
             try:
-                with self.session.get(track.download_url, headers=self.headers, stream=True) as r:
+                with self.session.get(track.download_url, stream=True) as r:
                     r.raise_for_status()
                     file_length = r.headers.get("content-length")
                     file_length = int(file_length) if (file_length is not None and file_length.isdecimal()) else None
