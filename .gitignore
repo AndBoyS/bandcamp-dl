@@ -49,3 +49,5 @@ bandcamp_dl/asyncdownloader.py
 venv/
 
 *.patch
+
+.vscode/settings.json
