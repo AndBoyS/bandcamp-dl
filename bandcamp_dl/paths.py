@@ -30,9 +30,8 @@ def _slugify(
     if case_mode == CaseType.UPPER:
         content = content.upper()
     if case_mode == CaseType.CAMEL:
-        # pyrefly: ignore [implicit-any-lambda]
         content = re.sub(r"(((?<=\s)|^|-)[a-z])", lambda x: x.group().upper(), content.lower())
-    return slugify.slugify(
+    res = slugify.slugify(
         content,
         ok=ok_chars,
         only_ascii=ascii_only,
@@ -40,6 +39,8 @@ def _slugify(
         lower=not retain_case,
         space_replacement=space_char,
     )
+    assert isinstance(res, str)
+    return res
 
 
 def template_to_path(*, track: TrackInfo, album: AlbumInfo, config: Config) -> Path:
@@ -70,7 +71,7 @@ def template_to_path(*, track: TrackInfo, album: AlbumInfo, config: Config) -> P
         TemplateTokens.artist: album.artist,
         TemplateTokens.album: album_title,
         TemplateTokens.title: track_title,
-        TemplateTokens.date: album.date,
+        TemplateTokens.date: album.date if album.date is not None else "",
         TemplateTokens.label: label,
         TemplateTokens.track: str(track.track_num).zfill(2) if bool(track.track_num) else "Single",
         TemplateTokens.album_id: "" if album.album_id is None else str(album.album_id),

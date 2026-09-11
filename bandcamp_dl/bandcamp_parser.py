@@ -223,7 +223,11 @@ class BandcampParser:
             label=label,
             all_tracks_have_url=all(t is not None for t in tracks),
             art=self.get_album_art(soup=soup, quality=cover_quality) if add_art else None,
-            date=str(datetime.datetime.strptime(album_date, "%d %b %Y %H:%M:%S GMT").year),
+            date=(
+                str(datetime.datetime.strptime(album_date, "%d %b %Y %H:%M:%S GMT").year)
+                if album_date is not None
+                else None
+            ),
             url=url,
             genres="; ".join(page_json["keywords"]) if add_genres else None,
             album_id=album_id,

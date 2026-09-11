@@ -149,7 +149,7 @@ class AlbumInfo(GoodBaseModel):
     label: str | None = None
     all_tracks_have_url: bool
     art: str | None = None
-    date: str
+    date: str | None = None
     url: str
     genres: str | None = None
     album_id: int | None = None
